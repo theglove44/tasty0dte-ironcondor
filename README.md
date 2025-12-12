@@ -123,12 +123,38 @@ To run this bot unattended in the background on macOS:
     ```
     This script will automatically configure the plist with your correct paths/username, install it to `~/Library/LaunchAgents/`, and load the service.
 
+
 The bot will now run constantly in the background, preventing your Mac from sleeping while it is active (using `caffeinate`).
 
-- **Logs**: Output is saved to `stdout.log` and `stderr.log` in the project directory.
-- **Stop**: Run `launchctl unload ~/Library/LaunchAgents/com.yourname.tasty0dte.plist`
+## Monitoring & Management
 
-## Testing & Utilities
+Since the bot runs in the background, you can't see the output directly in your terminal. Use these commands to monitor it:
+
+### 1. Check Status
+Verify the service is running:
+```bash
+launchctl list | grep tasty0dte
+```
+*(If it returns a number in the first column (PID), it is running. If it returns `-`, it is not running or crashed.)*
+
+### 2. View Real-Time Logs
+Watch what the bot is doing right now (scanning, prices, errors):
+```bash
+./monitor_logs.sh
+```
+*(Press `Ctrl+C` to stop watching)*
+
+### 3. View Trade History
+Check the CSV log of all trades:
+```bash
+python view_trades.py
+```
+
+### 4. Stop the Bot
+To unload the service and stop the background process:
+```bash
+launchctl unload ~/Library/LaunchAgents/com.${USER}.tasty0dte.plist
+```
 
 The project includes several test scripts to verify logic without waiting for real-time market conditions.
 
