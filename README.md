@@ -116,19 +116,12 @@ You can run this script manually if you want to start the trader and ensure your
 ### Background Service (Launchd)
 To run this bot unattended in the background on macOS:
 
-1. **Configure the plist**:
-    - Rename `com.example.tasty0dte.plist` to `com.yourname.tasty0dte.plist`.
-    - Edit the file and replace `/Users/YOUR_USERNAME/` with your actual home directory path.
 
-2. **Move the configuration file** to your LaunchAgents folder:
+1. **Run the setup script**:
     ```bash
-    mv com.yourname.tasty0dte.plist ~/Library/LaunchAgents/
+    ./setup_service.sh
     ```
-
-3. **Load the service**:
-    ```bash
-    launchctl load ~/Library/LaunchAgents/com.yourname.tasty0dte.plist
-    ```
+    This script will automatically configure the plist with your correct paths/username, install it to `~/Library/LaunchAgents/`, and load the service.
 
 The bot will now run constantly in the background, preventing your Mac from sleeping while it is active (using `caffeinate`).
 
