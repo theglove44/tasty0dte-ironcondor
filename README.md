@@ -104,10 +104,6 @@ This software is for educational purposes only. Do not risk money you cannot aff
 
 To run this bot unattended in the background on macOS:
 
-## Automated Execution
-
-To run this bot unattended in the background on macOS:
-
 1. **Configure the plist**:
     - Rename `com.example.tasty0dte.plist` to `com.yourname.tasty0dte.plist`.
     - Edit the file and replace `/Users/YOUR_USERNAME/` with your actual home directory path.
