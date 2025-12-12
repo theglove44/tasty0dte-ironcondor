@@ -12,3 +12,4 @@ test_*.csv
 stdout.log
 stderr.log
 *.plist
+!com.example.tasty0dte.plist
