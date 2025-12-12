@@ -7,3 +7,8 @@ metrics_output.txt
 .DS_Store
 paper_trades.csv
 test_*.csv
+
+# Automation Logs & Config
+stdout.log
+stderr.log
+*.plist

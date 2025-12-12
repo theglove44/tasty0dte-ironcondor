@@ -99,3 +99,22 @@ python main.py
 
 ## Disclaimer
 This software is for educational purposes only. Do not risk money you cannot afford to lose.
+
+## Automated Execution
+
+To run this bot unattended in the background on macOS:
+
+1. **Move the configuration file** to your LaunchAgents folder:
+    ```bash
+    mv com.christaylor.tasty0dte.plist ~/Library/LaunchAgents/
+    ```
+
+2. **Load the service**:
+    ```bash
+    launchctl load ~/Library/LaunchAgents/com.christaylor.tasty0dte.plist
+    ```
+
+The bot will now run constantly in the background, preventing your Mac from sleeping while it is active (using `caffeinate`).
+
+- **Logs**: Output is saved to `stdout.log` and `stderr.log` in the project directory.
+- **Stop**: Run `launchctl unload ~/Library/LaunchAgents/com.christaylor.tasty0dte.plist`
