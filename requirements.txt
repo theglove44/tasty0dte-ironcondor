@@ -1,0 +1,4 @@
+tastytrade
+pandas
+python-dotenv
+websockets
