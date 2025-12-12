@@ -1,0 +1,101 @@
+# Tastytrade 0DTE Iron Condor Automator
+
+An automated trading bot designed for **0DTE (Zero Days to Expiration)** Iron Condors on **SPX**, utilizing the Tastytrade API. This tool automates the entire lifecycle of the trade: from identifying opportunities and entering trades at specific times to monitoring positions and executing exits based on profit targets or time constraints.
+
+> [!NOTE]
+> This application currently runs in **Paper Trading Mode** by default (logging trades to a CSV file instead of sending live orders).
+
+## Features
+
+- **Automated Entry**: Scans for opportunities at specific times (UK Time).
+- **Strategy Logic**: Implements 0DTE Iron Condors with configurable delta targets.
+- **Position Monitoring**: Real-time tracking of P/L using live market data streamers.
+- **Automated Exits**:
+    - **Profit Taking**: Automatically closes trades when they reach 25% max profit.
+    - **Time-Based Exit**: Specific strategies exit early at a defined time.
+    - **EOD Expiration**: Handles settlement and expiration for positions held to market close.
+- **Paper Trading**: fully functional paper trading engine that simulates fills and tracks performance in `paper_trades.csv`.
+
+## Strategies
+
+The bot currently implements two variations of the Iron Condor strategy on SPX. Both target **$20 wide wings**.
+
+### 1. 20 Delta Iron Condor
+- **Entry**: Short strikes selected at approximately **20 Delta**.
+- **Management**:
+    - **Take Profit**: 25% of credit received.
+    - **Stop Loss**: None (held to expiration or profit target).
+
+### 2. 30 Delta Iron Condor
+- **Entry**: Short strikes selected at approximately **30 Delta**.
+- **Management**:
+    - **Take Profit**: 25% of credit received.
+    - **Time Exit**: Positions are closed automatically at **18:00 UK Time** (13:00 ET) if the profit target hasn't been hit.
+
+### Entry Schedule (UK Time)
+The bot triggers entry logic at the following times:
+- `14:45`
+- `15:00`
+- `15:30`
+
+## Installation
+
+1. **Clone the Repository**
+   ```bash
+   git clone https://github.com/theglove44/tasty0dte-ironcondor.git
+   cd tasty0dte-ironcondor
+   ```
+
+2. **Set Up Virtual Environment**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *Note: Requires `tastytrade-sdk`, `pandas`, `python-dotenv`.*
+
+4. **Configuration**
+   Create a `.env` file in the root directory with your Tastytrade credentials. You can use the provided `.env.example` as a template.
+   ```bash
+   cp .env.example .env
+   ```
+   
+   **Required Variables:**
+   ```env
+   TASTY_REFRESH_TOKEN=your_token_here
+   TASTY_CLIENT_SECRET=your_client_secret_here  # Only if using custom OAuth
+   TASTY_ACCOUNT_ID=your_account_id
+   ```
+
+## Usage
+
+Run the main script to start the bot:
+
+```bash
+python main.py
+```
+
+### What to Expect
+1. **Authentication**: The bot will authenticate with Tastytrade.
+2. **Monitoring**: It will immediately check `paper_trades.csv` for any open positions and start streaming quotes to monitor their P/L.
+3. **Scanning**: It will wait for the next scheduled entry time.
+4. **Execution**: When a strategy triggers, it will:
+    - Fetch the SPX option chain.
+    - Filter for 0DTE expirations.
+    - Calculate the legs based on the Delta target.
+    - Log the "fill" to `paper_trades.csv`.
+
+## Project Structure
+
+- `main.py`: The entry point. Handles the scheduling loop and authenticates the session.
+- `strategy.py`: Contains the core logic for finding trade entry candidates (fetching chains, selecting legs based on Delta).
+- `monitor.py`: Handles active trade management. Streams real-time quotes, calculates P/L, and updates the CSV when trades close or expire.
+- `logger.py`: structured logging setup.
+- `paper_trades.csv`: The local database of all trades (Entry/Exit prices, P/L, Status).
+
+## Disclaimer
+This software is for educational purposes only. Do not risk money you cannot afford to lose.
