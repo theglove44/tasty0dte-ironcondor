@@ -102,6 +102,18 @@ This software is for educational purposes only. Do not risk money you cannot aff
 
 ## Automated Execution
 
+### Helper Script: `run_autotrader.sh`
+This shell script is the engine behind the automation. It performs three key functions:
+1. **Prevents Sleep**: Uses `caffeinate -i` to prevent your Mac from sleeping while the trading session is active (crucial for 0DTE management).
+2. **Environment Management**: Automatically navigates to the project directory and activates the Python virtual environment.
+3. **Execution**: Runs `main.py` with the correct settings.
+
+You can run this script manually if you want to start the trader and ensure your computer stays awake:
+```bash
+./run_autotrader.sh
+```
+
+### Background Service (Launchd)
 To run this bot unattended in the background on macOS:
 
 1. **Configure the plist**:
@@ -122,3 +134,32 @@ The bot will now run constantly in the background, preventing your Mac from slee
 
 - **Logs**: Output is saved to `stdout.log` and `stderr.log` in the project directory.
 - **Stop**: Run `launchctl unload ~/Library/LaunchAgents/com.yourname.tasty0dte.plist`
+
+## Testing & Utilities
+
+The project includes several test scripts to verify logic without waiting for real-time market conditions.
+
+### `test_strategy.py`
+**Use Case**: Manual Strategy Verification.
+- **What it does**: Bypasses the schedule and attempts to run the full trade entry logic **immediately** using live market data.
+- **When to use**: Use this to check if the API connection is working and if the strategy can successfully find legs and calculate credit right now.
+- **Warning**: This requires valid credentials in `.env` and makes real API calls (though in paper mode it only logs to CSV).
+
+### `test_monitor.py`
+**Use Case**: Unit Testing Logic.
+- **What it does**: Tests the P/L calculation and "Take Profit" logic. It uses mocked market data to simulate prices moving in your favor to ensure the code correctly identifies when to close a trade.
+- **When to use**: Run this after making changes to `monitor.py` to ensure you haven't broken the exit logic.
+
+### `test_entry_logic.py`
+**Use Case**: Scheduler Verification.
+- **What it does**: Verifies the time-checking mechanism. It simulates different times of day to ensure the bot triggers *only* at 14:45, 15:00, and 15:30.
+- **When to use**: Use this if you are changing the target entry times.
+
+### `test_display.py`
+**Use Case**: UI/UX Verification.
+- **What it does**: Simulates the console output for open trades. It creates a dummy trade entry to show how the P/L, Credits, and IV Rank are formatted in the console.
+- **When to use**: Use this when tweaking the look and feel of the dashboard output.
+
+### `test_empty.py`
+**Use Case**: Edge Case Testing.
+- **What it does**: Verifies that the dashboard handles an empty state (no open trades) gracefully without crashing.
