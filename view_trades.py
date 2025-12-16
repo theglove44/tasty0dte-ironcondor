@@ -90,9 +90,17 @@ def view_trades():
 
     # Optionally show Open trades separately if desired, but user asked for "closed trades with their results"
     if 'Status' in df.columns:
-        open_trades = df[df['Status'] == 'OPEN']
+        open_trades = df[df['Status'] == 'OPEN'].copy()
         if not open_trades.empty:
-            print(f"\n[Note: {len(open_trades)} Open Trade(s) hidden]")
+            print("\n=== Open Trades Log ===\n")
+            cols_to_show_open = ['Date', 'Entry Time', 'Symbol', 'Strategy', 'Credit Collected', 'Profit Target', 'Current Debit', 'IV Rank']
+            # Basic formatted columns for open trades
+            open_trades['Strategy'] = open_trades.apply(format_strategy, axis=1)
+            
+            # Check availability
+            avail_cols_open = [c for c in cols_to_show_open if c in open_trades.columns]
+            print(open_trades[avail_cols_open])
+            print("\n=======================")
 
 if __name__ == "__main__":
     view_trades()
