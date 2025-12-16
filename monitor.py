@@ -56,7 +56,7 @@ def close_trade(df, index, debit_to_close, current_profit, csv_path):
     except Exception as e:
         logger.error(f"Failed to close trade {index}: {e}")
 
-async def check_open_positions(session: Session, csv_path: str = "paper_trades.csv"):
+async def check_open_positions(session: Session, csv_path: str = "paper_trades.csv", read_only: bool = False):
     """
     Checks open positions in the CSV, streams current prices,
     calculates P/L, and closes trades if profit target is reached.
@@ -97,7 +97,8 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
     status_lines = []
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    status_lines.append(f"[{current_time}] Monitoring {len(open_trades)} open trades. Streaming quotes for {len(symbol_list)} symbols...")
+    read_only_msg = " [READ-ONLY]" if read_only else ""
+    status_lines.append(f"[{current_time}] Monitoring {len(open_trades)} open trades. Streaming quotes for {len(symbol_list)} symbols...{read_only_msg}")
 
     # Stream Quotes & Summary
     quotes = {}
@@ -267,18 +268,24 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             status_lines.append(f"Trade {index} [{description}]: Credit={initial_credit:.2f}, Current Debit={debit_to_close:.2f}, P/L={current_profit:.2f}, Target={profit_target:.2f}{iv_rank_str}")
 
             if debit_to_close <= target_debit:
-                logger.info(f"Profit Target Reached for Trade {index}! Closing...")
-                close_trade(df, index, debit_to_close, current_profit, csv_path)
-                trades_closed += 1
+                if read_only:
+                    status_lines.append(f"   >>> PROFIT TARGET REACHED (Read-Only)")
+                else:
+                    logger.info(f"Profit Target Reached for Trade {index}! Closing...")
+                    close_trade(df, index, debit_to_close, current_profit, csv_path)
+                    trades_closed += 1
             elif is_time_exit:
-                logger.info(f"Time Entit (18:00 UK) Reached for Trade {index} ({strategy_name})! Closing...")
-                # Update notes to reflect Time Exit
-                current_notes = df.at[index, 'Notes']
-                if pd.isna(current_notes): current_notes = ""
-                df.at[index, 'Notes'] = f"{current_notes} | Time Exit 18:00"
-                
-                close_trade(df, index, debit_to_close, current_profit, csv_path)
-                trades_closed += 1
+                if read_only:
+                    status_lines.append(f"   >>> TIME EXIT REACHED (Read-Only)")
+                else:
+                    logger.info(f"Time Exit (18:00 UK) Reached for Trade {index} ({strategy_name})! Closing...")
+                    # Update notes to reflect Time Exit
+                    current_notes = df.at[index, 'Notes']
+                    if pd.isna(current_notes): current_notes = ""
+                    df.at[index, 'Notes'] = f"{current_notes} | Time Exit 18:00"
+                    
+                    close_trade(df, index, debit_to_close, current_profit, csv_path)
+                    trades_closed += 1
                 
         except Exception as e:
             logger.error(f"Error processing trade {index}: {e}")
