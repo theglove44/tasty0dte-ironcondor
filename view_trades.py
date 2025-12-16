@@ -43,13 +43,39 @@ def view_trades():
         # Select columns to display
         # We want: Date, Entry Time, Symbol, Short Call, Long Call, Short Put, Long Put, Credit Collected, Exit P/L, Notes
         # Adjust based on what is available
-        cols_to_show = ['Date', 'Entry Time', 'Symbol', 'Exit P/L', 'Notes']
+        cols_to_show = ['Date', 'Entry Time', 'Symbol', 'Strategy', 'Exit P/L', 'Notes']
         
         # Add Strikes context if possible, but keep it clean.
         # Maybe just show the main columns requested.
         
-        # Check if columns exist before selecting
-        available_cols = [c for c in cols_to_show if c in df.columns]
+        # Helper to format Strategy with Time
+        def format_strategy(row):
+            strat = row.get('Strategy', 'Unknown')
+            entry_time = str(row.get('Entry Time', '00:00'))
+            hh_mm = entry_time[:5]
+            return f"{strat} ({hh_mm})"
+
+        # Helper to derive Rules based on Strategy
+        def get_rules(row):
+            strat = row.get('Strategy', '')
+            # Criteria derived from known codebase logic
+            if '30 Delta' in strat:
+                return "25% Profit | 18:00 Exit"
+            elif '20 Delta' in strat:
+                return "25% Profit | EOD Exp"
+            return "Unknown"
+
+        if 'Strategy' in closed_trades.columns:
+             if 'Entry Time' in closed_trades.columns:
+                 closed_trades['Strategy'] = closed_trades.apply(format_strategy, axis=1)
+             
+             closed_trades['Rules'] = closed_trades.apply(get_rules, axis=1)
+
+        # Update cols_to_show
+        # Added 'Profit Target' and 'Rules'
+        cols_to_show = ['Date', 'Entry Time', 'Symbol', 'Strategy', 'Rules', 'Profit Target', 'Exit P/L', 'Notes']
+
+        available_cols = [c for c in cols_to_show if c in closed_trades.columns]
         
         print(closed_trades[available_cols])
         print("\n=========================")
