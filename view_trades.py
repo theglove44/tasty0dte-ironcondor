@@ -66,10 +66,10 @@ def view_trades():
             return "Unknown"
 
         if 'Strategy' in closed_trades.columns:
-             if 'Entry Time' in closed_trades.columns:
-                 closed_trades['Strategy'] = closed_trades.apply(format_strategy, axis=1)
-             
-             closed_trades['Rules'] = closed_trades.apply(get_rules, axis=1)
+            if 'Entry Time' in closed_trades.columns:
+                closed_trades['Strategy'] = closed_trades.apply(format_strategy, axis=1)
+
+            closed_trades['Rules'] = closed_trades.apply(get_rules, axis=1)
 
         # Update cols_to_show
         # Added 'Profit Target' and 'Rules'
