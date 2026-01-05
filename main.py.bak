@@ -67,7 +67,7 @@ async def main():
             for target in target_times:
                 if now_uk.time().hour == target.hour and now_uk.time().minute == target.minute:
                      logger.info(f"Triggering Trade Entry for {target}...")
-                     await execute_trade_cycle(session, trigger_time=target)
+                     await execute_trade_cycle(session)
                      # Sleep to avoid re-triggering in same minute
                      await asyncio.sleep(60)
                      break
@@ -80,8 +80,8 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Stopping...")
 
-async def execute_trade_cycle(session: Session, trigger_time: time = None):
-    logger.info(f"Starting Trade Cycle for {trigger_time}...")
+async def execute_trade_cycle(session: Session):
+    logger.info("Starting Trade Cycle...")
     
     # 1. Fetch Chain
     chain = await strategy.fetch_spx_option_chain(session)
@@ -96,46 +96,19 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
     iv_rank = await strategy.fetch_spx_iv_rank(session)
     
     # Define Strategies
-    # Note: Times are in UK time as per main loop logic (14:45, 15:00, 15:30)
-    # 3pm GMT is 15:00 UK time (usually, assuming standard winter time or alignment)
     strategies = [
-        {'name': "20 Delta", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25},
-        {'name': "30 Delta", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
-        {'name': "Iron Fly V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
-        {'name': "Iron Fly V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]}
+        {'name': "20 Delta", 'target_delta': 0.20},
+        {'name': "30 Delta", 'target_delta': 0.30}
     ]
     
     for strat in strategies:
         strat_name = strat['name']
-        strat_type = strat['type']
         target_delta = strat['target_delta']
-        profit_target_pct = strat['profit_target_pct']
-        allowed_times = strat.get('allowed_times')
         
-        # Check Entry Time
-        if allowed_times and trigger_time:
-            # simple check: if trigger_time (HH:MM) is in allowed_times
-            # time objects comparison should work for hour/minute
-            is_allowed = False
-            for t in allowed_times:
-                if t.hour == trigger_time.hour and t.minute == trigger_time.minute:
-                    is_allowed = True
-                    break
-            
-            if not is_allowed:
-                # logger.info(f"Skipping {strat_name} at {trigger_time}")
-                continue
-
-        logger.info(f"Executing Strategy: {strat_name} (Delta {target_delta}, Type {strat_type})")
+        logger.info(f"Executing Strategy: {strat_name} (Delta {target_delta})")
         
         # 3. Find Legs
-        legs = None
-        if strat_type == 'iron_condor':
-             legs = await strategy.find_iron_condor_legs(session, exp, target_delta=target_delta)
-        elif strat_type == 'iron_fly':
-             wing_width = strat.get('wing_width', 10)
-             legs = await strategy.find_iron_fly_legs(session, exp, target_delta=target_delta, wing_width=wing_width)
-        
+        legs = await strategy.find_iron_condor_legs(session, exp, target_delta=target_delta)
         if not legs:
             logger.error(f"[{strat_name}] Could not find suitable legs.")
             continue
@@ -150,13 +123,8 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         credit = (short_call_price + short_put_price) - (long_call_price + long_put_price)
         
         # Buying Power / Risk
-        # Width of wings
-        # For Iron Fly, width is explicitly defined or calculated
-        # For Iron Condor, width is calculated from strikes
-        call_width = abs(float(legs['short_call']['strike']) - float(legs['long_call']['strike']))
-        put_width = abs(float(legs['short_put']['strike']) - float(legs['long_put']['strike']))
-        
-        width = max(call_width, put_width)
+        # Width of wings (assuming symmetric 20 wide)
+        width = abs(float(legs['short_call']['strike']) - float(legs['long_call']['strike']))
         
         # Risk = Width - Credit
         risk = width - credit
@@ -164,15 +132,9 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         # BP Effect = Risk * 100 (for 1 contract)
         bp = risk * 100
         
-        profit_target = credit * profit_target_pct
+        profit_target = credit * 0.25
         
-        # Check if entry time is valid for this strategy?
-        # Requirement: "entry is at 3pm GMT"
-        # The main loop triggers at 14:45, 15:00, 15:30.
-        # "3pm GMT" is 15:00 GMT (which is 15:00 UK time in winter/GMT, but London is usually GMT or BST).
-        # Assuming current time usage (pytz London) matches the intent.
-        
-        description = f"SPX {strat_type} ({strat_name}): {legs['short_call']['strike']}/{legs['long_call']['strike']} Call Spread & {legs['short_put']['strike']}/{legs['long_put']['strike']} Put Spread"
+        description = f"SPX Iron Condor ({strat_name}): {legs['short_call']['strike']}/{legs['long_call']['strike']} Call Spread & {legs['short_put']['strike']}/{legs['long_put']['strike']} Put Spread"
         logger.info(f"Trade Identified: {description}")
         
         # 5. Log Trade

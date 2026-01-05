@@ -42,8 +42,8 @@ async def list_live():
         while True:
             # Connection Keep-Alive
             if not session.validate():
-                 # print("Refreshing session...")
-                 session = Session(refresh_token=refresh_token, provider_secret=client_secret)
+                # print("Refreshing session...")
+                session = Session(refresh_token=refresh_token, provider_secret=client_secret)
 
             # Check open positions in READ-ONLY mode
             await monitor.check_open_positions(session, read_only=True)
