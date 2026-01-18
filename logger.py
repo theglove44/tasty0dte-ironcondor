@@ -8,7 +8,7 @@ LOG_FILE = "paper_trades.csv"
 logger = logging.getLogger("logger")
 
 HEADER = [
-    "Date", "Entry Time", "Symbol", "Strategy",
+    "Date", "Entry Time", "Symbol", "Strategy", "StrategyId",
     "Short Call", "Long Call", "Short Put", "Long Put", 
     "Credit Collected", "Buying Power", "Profit Target", 
     "Status", "Exit Time", "Exit P/L", "Notes", "IV Rank"
@@ -35,9 +35,10 @@ def init_log_file():
         # Check for missing columns
         missing_strategy = "Strategy" not in headers
         missing_iv = "IV Rank" not in headers
+        missing_id = "StrategyId" not in headers
         
-        if missing_strategy or missing_iv:
-            logger.info(f"Migrating CSV. Missing Strategy: {missing_strategy}, Missing IV: {missing_iv}")
+        if missing_strategy or missing_iv or missing_id:
+            logger.info(f"Migrating CSV. Missing Strat: {missing_strategy}, IV: {missing_iv}, ID: {missing_id}")
             migrate_csv(headers)
 
 def migrate_csv(old_headers):
@@ -67,6 +68,39 @@ def migrate_csv(old_headers):
             elif col == "Strategy":
                 # Default existing trades to "20 Delta" since that was the only strategy before
                 new_row.append("20 Delta") 
+            elif col == "StrategyId":
+                # Generate ID based on Strategy and Time
+                strat = row_dict.get("Strategy", "20 Delta")
+                if "Strategy" not in row_dict:
+                     # If we are migrating from very old format where Strategy didn't exist, it was 20 Delta
+                     strat = "20 Delta"
+                
+                # Parse Time
+                time_str = row_dict.get("Entry Time", "00:00:00")
+                try:
+                    # HH:MM:SS
+                    t_parts = time_str.split(':')
+                    hm = f"{t_parts[0]}{t_parts[1]}" # HHMM
+                except:
+                    hm = "0000"
+
+                # Map Strategy Name to Short Code
+                if "20 Delta" in strat:
+                    s_code = "IC-20D"
+                elif "30 Delta" in strat:
+                    s_code = "IC-30D"
+                elif "Iron Fly V1" in strat:
+                    s_code = "IF-V1"
+                elif "Iron Fly V2" in strat:
+                    s_code = "IF-V2"
+                elif "Iron Fly V3" in strat:
+                    s_code = "IF-V3"
+                elif "Iron Fly V4" in strat:
+                    s_code = "IF-V4"
+                else:
+                    s_code = "UNK"
+                
+                new_row.append(f"{s_code}-{hm}")
             else:
                 new_row.append("") # padding for other new columns
         new_rows.append(new_row)
@@ -78,9 +112,10 @@ def migrate_csv(old_headers):
         writer.writerows(new_rows)
     logger.info("Migration complete.")
 
-def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta"):
+def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id=""):
     init_log_file()
-    
+
+    with open(LOG_FILE, mode='a', newline='') as file:
         ivr_val = float(iv_rank)
         # Normalize if it looks like a ratio (e.g. 0.15 -> 15.0)
         # But be careful if IVR is actually < 1.0 (e.g. 0.5). 
@@ -102,6 +137,7 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             datetime.now().strftime("%H:%M:%S"),
             "SPX",
             strategy_name,
+            strategy_id,
             legs['short_call']['symbol'],
             legs['long_call']['symbol'],
             legs['short_put']['symbol'],
