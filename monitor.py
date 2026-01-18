@@ -51,7 +51,25 @@ def close_trade(df, index, debit_to_close, current_profit, csv_path):
             current_notes = ""
         df.at[index, 'Notes'] = f"{current_notes} | Closed at Debit: {debit_to_close:.2f}"
         
-        df.to_csv(csv_path, index=False)
+        # Enforce 2 decimal formatting for saving
+        # We need to make sure we don't turn everything into strings permanently if we continue using df in memory,
+        # but here we are just saving to CSV.
+        # However, checking eod expiration reads this CSV later.
+        # It's safer to round the specific columns in the dataframe or format them as strings for output.
+        # Let's simple format the specific cells we just touched, and maybe ensure the other float columns are formatted?
+        # Actually, to be safe and consistent with "Crazy decimals", let's format the entire relevant columns.
+        
+        cols_to_format = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
+        for col in cols_to_format:
+            if col in df.columns:
+                # Round to 2 decimals first
+                # For IV Rank specifically, we might want to ensure normalization if we are touching it,
+                # but 'close_trade' usually just reads and saves. 
+                # The normalization should happen at cleanup or entry. 
+                # Here we just ensure it stays clean.
+                df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
+        
+        df.to_csv(csv_path, index=False, float_format='%.2f')
         logger.info(f"Trade {index} closed and saved to {csv_path}")
     except Exception as e:
         logger.error(f"Failed to close trade {index}: {e}")
@@ -421,7 +439,12 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
             logger.error(f"Error expiring trade {index}: {e}")
             
     if trades_expired > 0:
-        df.to_csv(csv_path, index=False)
+        cols_to_format = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
+        for col in cols_to_format:
+            if col in df.columns:
+                 df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
+
+        df.to_csv(csv_path, index=False, float_format='%.2f')
         logger.info(f"Expired {trades_expired} trades.")
 
 def is_market_closed():
