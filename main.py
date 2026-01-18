@@ -102,7 +102,9 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         {'name': "20 Delta", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25},
         {'name': "30 Delta", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
         {'name': "Iron Fly V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
-        {'name': "Iron Fly V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]}
+        {'name': "Iron Fly V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
+        {'name': "Iron Fly V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
+        {'name': "Iron Fly V4", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 30)]}
     ]
     
     for strat in strategies:
@@ -176,7 +178,23 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         logger.info(f"Trade Identified: {description}")
         
         # 5. Log Trade
-        trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank, strategy_name=strat_name)
+        
+        # Generate Strategy ID
+        t_code = "0000"
+        if trigger_time:
+             t_code = trigger_time.strftime("%H%M")
+        
+        s_code = "UNK"
+        if "20 Delta" in strat_name: s_code = "IC-20D"
+        elif "30 Delta" in strat_name: s_code = "IC-30D"
+        elif "Iron Fly V1" in strat_name: s_code = "IF-V1"
+        elif "Iron Fly V2" in strat_name: s_code = "IF-V2"
+        elif "Iron Fly V3" in strat_name: s_code = "IF-V3"
+        elif "Iron Fly V4" in strat_name: s_code = "IF-V4"
+        
+        strategy_id = f"{s_code}-{t_code}"
+        
+        trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank, strategy_name=strat_name, strategy_id=strategy_id)
         logger.info(f"[{strat_name}] Trade Logged successfully. IV Rank: {iv_rank}")
 
 if __name__ == "__main__":
