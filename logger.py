@@ -81,7 +81,21 @@ def migrate_csv(old_headers):
 def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta"):
     init_log_file()
     
-    with open(LOG_FILE, mode='a', newline='') as file:
+        ivr_val = float(iv_rank)
+        # Normalize if it looks like a ratio (e.g. 0.15 -> 15.0)
+        # But be careful if IVR is actually < 1.0 (e.g. 0.5). 
+        # Usually IVR is 0-100. If it's consistently < 1 across the board we assume ratio.
+        # Ideally rely on knowledge of source. Tasty API usually gives 0-100 string or decimal.
+        # But previous data showed 0.126... which implies ratio.
+        # Let's assume if it is <= 1.0 and > 0, it is a ratio.
+        # However, IVR can naturally be 0.5 (percentile). 
+        # A safer bet might be: if we see values > 1 in the wild, the source is 0-100.
+        # If the source is `metrics[0].implied_volatility_index_rank`, Tasty documentation says it's 0-100? 
+        # Looking at previous CSV data: "13.54%" and "0.126410256". 
+        # 0.126... is clearly 12.6%.
+        if 0 < ivr_val <= 1.0:
+             ivr_val *= 100.0
+             
         writer = csv.writer(file)
         writer.writerow([
             datetime.now().date(),
@@ -92,14 +106,14 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             legs['long_call']['symbol'],
             legs['short_put']['symbol'],
             legs['long_put']['symbol'],
-            credit,
-            buying_power,
-            profit_target,
+            f"{float(credit):.2f}",
+            f"{float(buying_power):.2f}",
+            f"{float(profit_target):.2f}",
             "OPEN",
             "",
             "",
             "0DTE Iron Condor",
-            iv_rank
+            f"{ivr_val:.2f}"
         ])
         
 def log_trade_exit(trade_id, exit_time, pl, notes=""):
