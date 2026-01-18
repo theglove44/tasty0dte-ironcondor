@@ -1,184 +1,115 @@
-# Tastytrade 0DTE Iron Condor Automator
+# Tasty0DTE: Automated Iron Condor & Iron Fly Trader
 
-An automated trading bot designed for **0DTE (Zero Days to Expiration)** Iron Condors on **SPX**, utilizing the Tastytrade API. This tool automates the entire lifecycle of the trade: from identifying opportunities and entering trades at specific times to monitoring positions and executing exits based on profit targets or time constraints.
+**Tasty0DTE** is an automated trading bot designed for **0DTE (Zero Days to Expiration)** strategies on **SPX**, utilizing the Tastytrade API. It automates the entire lifecycle of the trade: identifying opportunities at specific times, entering high-probability setups, monitoring P/L in real-time, and executing disciplined exits.
 
 > [!NOTE]
-> This application currently runs in **Paper Trading Mode** by default (logging trades to a CSV file instead of sending live orders).
+> This application runs in **Paper Trading Mode** by default, logging "fills" to `paper_trades.csv` instead of sending live orders.
 
-## Features
+## 🚀 Key Features
 
-- **Automated Entry**: Scans for opportunities at specific times (UK Time).
-- **Strategy Logic**: Implements 0DTE Iron Condors with configurable delta targets.
-- **Position Monitoring**: Real-time tracking of P/L using live market data streamers.
-- **Automated Exits**:
-    - **Profit Taking**: Automatically closes trades when they reach 25% max profit.
-    - **Time-Based Exit**: Specific strategies exit early at a defined time.
-    - **EOD Expiration**: Handles settlement and expiration for positions held to market close.
-- **Paper Trading**: fully functional paper trading engine that simulates fills and tracks performance in `paper_trades.csv`.
+- **Automated Entry**: Precise entry execution at **14:45**, **15:00**, and **15:30** (UK Time).
+- **Multiple Strategies**: Supports both **Iron Condor** (Delta-based) and **Iron Fly** variants.
+- **Smart Management**:
+    - **Take Profit**: Automatically closes at predetermined profit targets (e.g., 25%).
+    - **Time Exits**: Enforces hard exits (e.g., 18:00 UK) for specific strategies to avoid end-of-day risks.
+    - **EOD Handling**: Manages settlement and expiration for positions held into the close.
+- **Real-Time Monitoring**: Streams live quotes to track position value and trigger exits instantly.
+- **Data Analysis**: Logs detailed trade history with unique **Strategy IDs** for granular performance tracking.
 
-## Strategies
+---
 
-The bot currently implements two variations of the Iron Condor strategy on SPX. Both target **$20 wide wings**.
+## 📊 Strategies
 
-### 1. 20 Delta Iron Condor
-- **Entry**: Short strikes selected at approximately **20 Delta**.
-- **Management**:
-    - **Take Profit**: 25% of credit received.
-    - **Stop Loss**: None (held to expiration or profit target).
+The bot operates on **SPX** and currently implements the following strategy variants:
 
-### 2. 30 Delta Iron Condor
-- **Entry**: Short strikes selected at approximately **30 Delta**.
-- **Management**:
-    - **Take Profit**: 25% of credit received.
-    - **Time Exit**: Positions are closed automatically at **18:00 UK Time** (13:00 ET) if the profit target hasn't been hit.
+| Strategy | ID Prefix | Entry Time (UK) | Structure | Profit Target | Time Exit | EOD Exit |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **20 Delta IC** | `IC-20D` | 14:45, 15:00, 15:30 | Short ~20 Delta, Wings $20 | 25% | None | Yes (21:00) |
+| **30 Delta IC** | `IC-30D` | 14:45, 15:00, 15:30 | Short ~30 Delta, Wings $20 | 25% | **18:00** | No |
+| **Iron Fly V1** | `IF-V1` | 15:00 | ATM Short, Wings $10 | 10% | None | Yes (21:00) |
+| **Iron Fly V2** | `IF-V2` | 15:00 | ATM Short, Wings $10 | 20% | None | Yes (21:00) |
+| **Iron Fly V3** | `IF-V3` | 15:30 | ATM Short, Wings $10 | 10% | None | Yes (21:00) |
+| **Iron Fly V4** | `IF-V4` | 15:30 | ATM Short, Wings $10 | 20% | None | Yes (21:00) |
 
-### Entry Schedule (UK Time)
-The bot triggers entry logic at the following times:
-- `14:45`
-- `15:00`
-- `15:30`
+---
 
-## Installation
+## 🛠️ Installation
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/theglove44/tasty0dte-ironcondor.git
-   cd tasty0dte-ironcondor
-   ```
+1.  **Clone the Repository**
+    ```bash
+    git clone https://github.com/theglove44/tasty0dte-ironcondor.git
+    cd tasty0dte-ironcondor
+    ```
 
-2. **Set Up Virtual Environment**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+2.  **Set Up Virtual Environment**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-3. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *Note: Requires `tastytrade-sdk`, `pandas`, `python-dotenv`.*
+3.  **Install Dependencies**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-4. **Configuration**
-   Create a `.env` file in the root directory with your Tastytrade credentials. You can use the provided `.env.example` as a template.
-   ```bash
-   cp .env.example .env
-   ```
-   
-   **Required Variables:**
-   ```env
-   TASTY_REFRESH_TOKEN=your_token_here
-   TASTY_CLIENT_SECRET=your_client_secret_here  # Only if using custom OAuth
-   TASTY_ACCOUNT_ID=your_account_id
-   ```
+4.  **Configuration**
+    Create a `.env` file with your Tastytrade credentials (template provided in `.env.example`).
+    ```bash
+    cp .env.example .env
+    ```
+    *Required: `TASTY_REFRESH_TOKEN`, `TASTY_ACCOUNT_ID`.*
 
-## Usage
+---
 
-Run the main script to start the bot:
+## 🖥️ Usage
 
+### Manual Start
+Run the main script to start the bot. It will authenticate and begin the loop (monitoring & scanning).
 ```bash
 python main.py
 ```
 
-### What to Expect
-1. **Authentication**: The bot will authenticate with Tastytrade.
-2. **Monitoring**: It will immediately check `paper_trades.csv` for any open positions and start streaming quotes to monitor their P/L.
-3. **Scanning**: It will wait for the next scheduled entry time.
-4. **Execution**: When a strategy triggers, it will:
-    - Fetch the SPX option chain.
-    - Filter for 0DTE expirations.
-    - Calculate the legs based on the Delta target.
-    - Log the "fill" to `paper_trades.csv`.
-
-## Project Structure
-
-- `main.py`: The entry point. Handles the scheduling loop and authenticates the session.
-- `strategy.py`: Contains the core logic for finding trade entry candidates (fetching chains, selecting legs based on Delta).
-- `monitor.py`: Handles active trade management. Streams real-time quotes, calculates P/L, and updates the CSV when trades close or expire.
-- `logger.py`: structured logging setup.
-- `paper_trades.csv`: The local database of all trades (Entry/Exit prices, P/L, Status).
-
-## Disclaimer
-This software is for educational purposes only. Do not risk money you cannot afford to lose.
-
-## Automated Execution
-
-### Helper Script: `run_autotrader.sh`
-This shell script is the engine behind the automation. It performs three key functions:
-1. **Prevents Sleep**: Uses `caffeinate -i` to prevent your Mac from sleeping while the trading session is active (crucial for 0DTE management).
-2. **Environment Management**: Automatically navigates to the project directory and activates the Python virtual environment.
-3. **Execution**: Runs `main.py` with the correct settings.
-
-You can run this script manually if you want to start the trader and ensure your computer stays awake:
+### Automated Execution (Recommended)
+Use the helper script to keep your system awake (macOS `caffeinate`) and manage the environment automatically.
 ```bash
 ./run_autotrader.sh
 ```
 
-### Background Service (Launchd)
-To run this bot unattended in the background on macOS:
-
-
-1. **Run the setup script**:
-    ```bash
-    ./setup_service.sh
-    ```
-    This script will automatically configure the plist with your correct paths/username, install it to `~/Library/LaunchAgents/`, and load the service.
-
-
-The bot will now run constantly in the background, preventing your Mac from sleeping while it is active (using `caffeinate`).
-
-## Monitoring & Management
-
-Since the bot runs in the background, you can't see the output directly in your terminal. Use these commands to monitor it:
-
-### 1. Check Status
-Verify the service is running:
+### Background Service (Set & Forget)
+Install the bot as a background service (LaunchAgent) on macOS. It will run silently and persist across reboots.
 ```bash
-launchctl list | grep tasty0dte
+./setup_service.sh
 ```
-*(If it returns a number in the first column (PID), it is running. If it returns `-`, it is not running or crashed.)*
+*To stop the service:* `launchctl unload ~/Library/LaunchAgents/com.${USER}.tasty0dte.plist`
 
-### 2. View Real-Time Logs
-Watch what the bot is doing right now (scanning, prices, errors):
-```bash
-./monitor_logs.sh
-```
-*(Press `Ctrl+C` to stop watching)*
+## 📈 Monitoring & Tools
 
-### 3. View Trade History
-Check the CSV log of all trades:
-```bash
-python view_trades.py
+Since the bot runs in the background, use these included scripts to check its status:
+
+| Command | Description |
+| :--- | :--- |
+| `./monitor_logs.sh` | **Live Logs**: Watch the bot's real-time activity (scanning, pricing, decision making). Press `Ctrl+C` to exit. |
+| `python view_trades.py` | **Trade History**: Displays a formatted table of all closed trades and their P/L, plus a snapshot of open positions. |
+| `python check_metrics.py` | **Health Check**: Quickly verify API connectivity and fetch current market metrics (SPX Price, IV Rank). |
+
+### Sample Output (`view_trades.py`)
+```text
+=== Closed Trades Log ===
+
+Date        Entry Time  Symbol  Strategy           Rules                    Profit Target  Exit P/L  Notes
+2026-01-15  15:00:25    SPX     20 Delta (15:00)   25% Profit | EOD Exp     1.02           1.10      Closed at Debit: 2.98
+2026-01-15  15:00:27    SPX     30 Delta (15:00)   25% Profit | 18:00 Exit  1.88           1.90      Closed at Debit: 5.60
+2026-01-16  15:00:12    SPX     Iron Fly V2 (15:00) Unknown                 1.74           1.77      Closed at Debit: 6.92
+
+=========================
+
+Summary (Closed Trades):
+Count: 42
+Total P/L: $65.30
 ```
 
-### 4. Stop the Bot
-To unload the service and stop the background process:
-```bash
-launchctl unload ~/Library/LaunchAgents/com.${USER}.tasty0dte.plist
-```
-
-The project includes several test scripts to verify logic without waiting for real-time market conditions.
-
-### `test_strategy.py`
-**Use Case**: Manual Strategy Verification.
-- **What it does**: Bypasses the schedule and attempts to run the full trade entry logic **immediately** using live market data.
-- **When to use**: Use this to check if the API connection is working and if the strategy can successfully find legs and calculate credit right now.
-- **Warning**: This requires valid credentials in `.env` and makes real API calls (though in paper mode it only logs to CSV).
-
-### `test_monitor.py`
-**Use Case**: Unit Testing Logic.
-- **What it does**: Tests the P/L calculation and "Take Profit" logic. It uses mocked market data to simulate prices moving in your favor to ensure the code correctly identifies when to close a trade.
-- **When to use**: Run this after making changes to `monitor.py` to ensure you haven't broken the exit logic.
-
-### `test_entry_logic.py`
-**Use Case**: Scheduler Verification.
-- **What it does**: Verifies the time-checking mechanism. It simulates different times of day to ensure the bot triggers *only* at 14:45, 15:00, and 15:30.
-- **When to use**: Use this if you are changing the target entry times.
-
-### `test_display.py`
-**Use Case**: UI/UX Verification.
-- **What it does**: Simulates the console output for open trades. It creates a dummy trade entry to show how the P/L, Credits, and IV Rank are formatted in the console.
-- **When to use**: Use this when tweaking the look and feel of the dashboard output.
-
-### `test_empty.py`
-**Use Case**: Edge Case Testing.
-- **What it does**: Verifies that the dashboard handles an empty state (no open trades) gracefully without crashing.
+## 🧪 Testing Scripts
+The project includes scripts to verify logic without waiting for market hours:
+- `test_strategy.py`: Forces a trade entry scan immediately using current market data.
+- `test_monitor.py`: Simulates P/L changes to test the "Take Profit" logic.
+- `test_entry_logic.py`: Verifies the scheduler triggers at the correct times.
