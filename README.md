@@ -90,7 +90,23 @@ Since the bot runs in the background, use these included scripts to check its st
 | :--- | :--- |
 | `./monitor_logs.sh` | **Live Logs**: Watch the bot's real-time activity (scanning, pricing, decision making). Press `Ctrl+C` to exit. |
 | `python view_trades.py` | **Trade History**: Displays a formatted table of all closed trades and their P/L, plus a snapshot of open positions. |
+| `python analyze_performance.py` | **Performance Analysis**: Detailed breakdown of win rates, P/L, and expectancy by strategy and time variation. |
 | `python check_metrics.py` | **Health Check**: Quickly verify API connectivity and fetch current market metrics (SPX Price, IV Rank). |
+
+### Sample Output (`analyze_performance.py`)
+```text
+=== Strategy Performance Analysis ===
+
+Strategy       Time   Trades  Win %  Net P/L ($)  Avg Win ($)  Avg Loss ($)  Exp Value ($)
+Iron Fly V2    14:37       1 100.0%        $2.20        $2.20         $0.00          $2.20
+   30 Delta    14:45      22  90.9%       $12.35        $2.13        $-5.22          $1.58
+...
+
+Overall Stats:
+Total Trades: 156
+Overall Win Rate: 82.1%
+Total P/L: $17.99
+```
 
 ### Sample Output (`view_trades.py`)
 ```text
