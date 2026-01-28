@@ -7,6 +7,10 @@ from tastytrade import Session, DXLinkStreamer
 from tastytrade.dxfeed import Quote, Summary
 
 import sys
+try:
+    from local import discord_notify
+except Exception:
+    discord_notify = None
 logger = logging.getLogger("0dte-monitor")
 
 # Track lines for console refresh
@@ -37,20 +41,21 @@ def refresh_console(lines: list, reset_cursor: bool = False):
     sys.stdout.flush()
     _last_lines_count = len(lines)
 
-def close_trade(df, index, debit_to_close, current_profit, csv_path):
+async def close_trade(df, index, debit_to_close, current_profit, csv_path, session=None, reason="Profit Target"):
     """
     Updates the trade status to CLOSED in the dataframe and saves to CSV.
+    Optionally sends Discord webhook notification.
     """
     try:
         df.at[index, 'Status'] = 'CLOSED'
         df.at[index, 'Exit Time'] = datetime.now().strftime("%H:%M:%S")
         df.at[index, 'Exit P/L'] = round(current_profit, 2)
-        
+
         current_notes = df.at[index, 'Notes']
         if pd.isna(current_notes):
             current_notes = ""
         df.at[index, 'Notes'] = f"{current_notes} | Closed at Debit: {debit_to_close:.2f}"
-        
+
         # Enforce 2 decimal formatting for saving
         # We need to make sure we don't turn everything into strings permanently if we continue using df in memory,
         # but here we are just saving to CSV.
@@ -58,19 +63,71 @@ def close_trade(df, index, debit_to_close, current_profit, csv_path):
         # It's safer to round the specific columns in the dataframe or format them as strings for output.
         # Let's simple format the specific cells we just touched, and maybe ensure the other float columns are formatted?
         # Actually, to be safe and consistent with "Crazy decimals", let's format the entire relevant columns.
-        
+
         cols_to_format = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
         for col in cols_to_format:
             if col in df.columns:
                 # Round to 2 decimals first
                 # For IV Rank specifically, we might want to ensure normalization if we are touching it,
-                # but 'close_trade' usually just reads and saves. 
-                # The normalization should happen at cleanup or entry. 
+                # but 'close_trade' usually just reads and saves.
+                # The normalization should happen at cleanup or entry.
                 # Here we just ensure it stays clean.
                 df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
-        
+
         df.to_csv(csv_path, index=False, float_format='%.2f')
         logger.info(f"Trade {index} closed and saved to {csv_path}")
+
+        # Send Discord webhook notification
+        try:
+            # Fetch SPX spot for the notification
+            spx_spot = None
+            if session:
+                try:
+                    async with DXLinkStreamer(session) as streamer:
+                        await streamer.subscribe(Quote, ["SPX"])
+                        start_time = datetime.now()
+                        async for event in streamer.listen(Quote):
+                            if (datetime.now() - start_time).seconds > 3:
+                                break
+                            events = event if isinstance(event, list) else [event]
+                            for e in events:
+                                if isinstance(e, Quote) and e.event_symbol == "SPX":
+                                    if e.bid_price and e.ask_price:
+                                        spx_spot = float((e.bid_price + e.ask_price) / 2)
+                                    elif e.ask_price:
+                                        spx_spot = float(e.ask_price)
+                                    break
+                            if spx_spot:
+                                break
+                except:
+                    pass
+
+            strategy_name = df.at[index, 'Strategy'] if 'Strategy' in df.columns and pd.notna(df.at[index, 'Strategy']) else "Unknown"
+
+            if discord_notify is None:
+            logger.info(f"Trade {index}: Discord notifier not configured; skipping notification.")
+            return
+
+        if discord_notify is None:
+                logger.info(f"Trade {index}: Discord notifier not configured; skipping expiration notification.")
+                return
+
+            payload = discord_notify.format_trade_close_payload(
+                strategy_name=strategy_name,
+                short_call_symbol=df.at[index, 'Short Call'],
+                long_call_symbol=df.at[index, 'Long Call'],
+                short_put_symbol=df.at[index, 'Short Put'],
+                long_put_symbol=df.at[index, 'Long Put'],
+                debit_to_close=debit_to_close,
+                pl=current_profit,
+                reason=reason,
+                spx_spot=spx_spot
+            )
+            discord_notify.send_discord_webhook(payload)
+            logger.info(f"Trade {index}: Discord webhook sent for trade close.")
+        except Exception as e:
+            logger.warning(f"Trade {index}: Failed to send Discord webhook: {e}")
+
     except Exception as e:
         logger.error(f"Failed to close trade {index}: {e}")
 
@@ -290,7 +347,7 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                     status_lines.append(f"   >>> PROFIT TARGET REACHED (Read-Only)")
                 else:
                     logger.info(f"Profit Target Reached for Trade {index}! Closing...")
-                    close_trade(df, index, debit_to_close, current_profit, csv_path)
+                    await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason="Profit Target")
                     trades_closed += 1
             elif is_time_exit:
                 if read_only:
@@ -301,8 +358,8 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                     current_notes = df.at[index, 'Notes']
                     if pd.isna(current_notes): current_notes = ""
                     df.at[index, 'Notes'] = f"{current_notes} | Time Exit 18:00"
-                    
-                    close_trade(df, index, debit_to_close, current_profit, csv_path)
+
+                    await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason="Time Exit (18:00 UK)")
                     trades_closed += 1
                 
         except Exception as e:
@@ -432,12 +489,32 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
             
             current_notes = row['Notes'] if pd.notna(row['Notes']) else ""
             df.at[index, 'Notes'] = f"{current_notes} | Settled at {spx_price:.2f}"
-            
+
             trades_expired += 1
-            
+
+            # Send Discord webhook for expiration
+            try:
+                strategy_name = df.at[index, 'Strategy'] if 'Strategy' in df.columns and pd.notna(df.at[index, 'Strategy']) else "Unknown"
+
+                payload = discord_notify.format_trade_close_payload(
+                    strategy_name=strategy_name,
+                    short_call_symbol=df.at[index, 'Short Call'],
+                    long_call_symbol=df.at[index, 'Long Call'],
+                    short_put_symbol=df.at[index, 'Short Put'],
+                    long_put_symbol=df.at[index, 'Long Put'],
+                    debit_to_close=total_debit,
+                    pl=eod_pl,
+                    reason=f"EOD Expired (settled at {spx_price:.2f})",
+                    spx_spot=spx_price
+                )
+                discord_notify.send_discord_webhook(payload)
+                logger.info(f"Trade {index}: Discord webhook sent for expiration.")
+            except Exception as e:
+                logger.warning(f"Trade {index}: Failed to send Discord webhook: {e}")
+
         except Exception as e:
             logger.error(f"Error expiring trade {index}: {e}")
-            
+
     if trades_expired > 0:
         cols_to_format = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
         for col in cols_to_format:

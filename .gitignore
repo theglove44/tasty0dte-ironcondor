@@ -13,3 +13,23 @@ stdout.log
 stderr.log
 *.plist
 !com.example.tasty0dte.plist
+
+# Local-only modules (not committed)
+/local/
+
+# Runtime logs
+stdout.log
+stderr.log
+guard_stdout.log
+guard_stderr.log
+
+# Guard/trader runtime files
+.trader.pid
+.guard.lock/
+.guard_enabled
+
+# Paper trade artifacts
+paper_trades.csv
+paper_trades.csv.*
+*.csv.bak
+market_session_guard.sh

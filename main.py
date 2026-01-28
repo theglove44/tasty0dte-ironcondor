@@ -8,7 +8,14 @@ from tastytrade import Session, DXLinkStreamer
 import strategy
 import monitor
 import logger as trade_logger
-
+try:
+    from local import discord_notify
+except Exception:
+    discord_notify = None
+try:
+    from local import x_notify
+except Exception:
+    x_notify = None
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -196,6 +203,66 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         
         trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank, strategy_name=strat_name, strategy_id=strategy_id)
         logger.info(f"[{strat_name}] Trade Logged successfully. IV Rank: {iv_rank}")
+
+        # 6. Send Discord notification for trade open
+        if discord_notify is None:
+            logger.info(f"[{strat_name}] Discord notifier not configured (local/discord_notify.py missing); skipping.")
+            return
+
+        try:
+            from tastytrade.dxfeed import Quote
+            # Fetch SPX spot for the notification
+            spx_spot = None
+            try:
+                async with DXLinkStreamer(session) as streamer:
+                    await streamer.subscribe(Quote, ["SPX"])
+                    start_time = datetime.now()
+                    async for event in streamer.listen(Quote):
+                        if (datetime.now() - start_time).seconds > 3:
+                            break
+                        events = event if isinstance(event, list) else [event]
+                        for e in events:
+                            if isinstance(e, Quote) and e.event_symbol == "SPX":
+                                if e.bid_price and e.ask_price:
+                                    spx_spot = float((e.bid_price + e.ask_price) / 2)
+                                elif e.ask_price:
+                                    spx_spot = float(e.ask_price)
+                                break
+                        if spx_spot:
+                            break
+            except:
+                pass
+
+            # Calculate wing width and credit percentage
+            wing_width = width
+            credit_pct = (credit / wing_width) * 100 if wing_width > 0 else 0
+            profit_target_debit = credit - profit_target
+
+            payload = discord_notify.format_trade_open_payload(
+                strategy_name=strat_name,
+                short_call_symbol=legs['short_call']['symbol'],
+                long_call_symbol=legs['long_call']['symbol'],
+                short_put_symbol=legs['short_put']['symbol'],
+                long_put_symbol=legs['long_put']['symbol'],
+                credit=float(credit),
+                profit_target=float(profit_target),
+                profit_target_debit=profit_target_debit,
+                wing_width=wing_width,
+                credit_pct=credit_pct,
+                spx_spot=spx_spot,
+                iv_rank=iv_rank
+            )
+            discord_notify.send_discord_webhook(payload)
+            logger.info(f"[{strat_name}] Discord webhook sent for trade open.")
+            
+            # Also post to X
+            try:
+                x_notify and x_notify.post_trade_update(strat_name, float(credit), spx_spot, iv_rank)
+                logger.info(f"[{strat_name}] X notification triggered.")
+            except Exception as xe:
+                logger.warning(f"[{strat_name}] Failed to trigger X notification: {xe}")
+        except Exception as e:
+            logger.warning(f"[{strat_name}] Failed to send Discord webhook: {e}")
 
 if __name__ == "__main__":
     try:

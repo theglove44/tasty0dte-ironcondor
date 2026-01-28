@@ -129,3 +129,117 @@ The project includes scripts to verify logic without waiting for market hours:
 - `test_strategy.py`: Forces a trade entry scan immediately using current market data.
 - `test_monitor.py`: Simulates P/L changes to test the "Take Profit" logic.
 - `test_entry_logic.py`: Verifies the scheduler triggers at the correct times.
+
+---
+
+## 🤖 Discord Bot Interaction
+
+**Discord Bot Name:** `@Jarvis` (ID: 1460642437558173809)
+
+**Discord Bot Channels:**
+- **#0dte-tasty** (ID: 1457745924561309767) — Main trading updates and alerts
+- **#tasty0dte-trade-summary** — End-of-day and weekly trade performance summaries
+
+### How to Use the Bot
+
+**Available Commands:**
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `@Jarvis status` | Check current bot status and connectivity | `@Jarvis status` |
+| `@Jarvis positions` | View all current positions | `@Jarvis positions` |
+| `@Jarvis trades` | Show recent trade history (last 10 trades) | `@Jarvis trades` |
+| `@Jarvis summary` | Display trade performance summary (win rate, P/L) | `@Jarvis summary` |
+| `@Jarvis next` | Show next scheduled entry signal | `@Jarvis next` |
+| `@Jarvis p/l` | Show current P/L for all open positions | `@Jarvis p/l` |
+| `@Jarvis analyze` | Performance analysis by strategy | `@Jarvis analyze iron fly` |
+
+### Manual Bot Control
+
+You can manually control the bot using these scripts in the `scripts/` directory:
+
+| Script | Description |
+|--------|-------------|
+| `start_bot.sh` | Start the bot in foreground (for testing/debugging) |
+| `stop_bot.sh` | Stop a running bot instance |
+| `run_autotrader.sh` | Run bot as background service (recommended) |
+| `monitor_logs.sh` | Live log viewer showing bot activity in real-time |
+
+### Viewing Logs
+
+**Live Monitoring:**
+```bash
+./scripts/monitor_logs.sh
+```
+This shows real-time activity including:
+- Market scans and signal detection
+- Trade entries and position management
+- P/L updates and profit-taking events
+- Strategy decisions and order execution
+
+Press `Ctrl+C` to exit the live log viewer.
+
+**Trade History:**
+```bash
+python scripts/view_trades.py
+```
+Displays a formatted table of all closed trades with P/L, entry/exit times, and strategy details.
+
+**Performance Analysis:**
+```bash
+python scripts/analyze_performance.py
+```
+Provides detailed breakdown of win rates, P/L expectancy, and performance by strategy and time variation.
+
+### Background Service (Recommended)
+
+For production use, run the bot as a background service that starts automatically on login:
+
+```bash
+./scripts/run_autotrader.sh
+```
+
+This uses `launchd` (macOS) to start the bot as a LaunchAgent, ensuring it runs silently in the background and persists across reboots.
+
+**To stop the background service:**
+```bash
+launchctl unload com.theglove44.tasty0dte.plist
+```
+
+### Paper Trading Mode
+
+The bot runs in **Paper Trading Mode** by default — trades are logged to `paper_trades.csv` instead of being sent to the Tastytrade API. This is perfect for:
+
+- ✅ Backtesting strategies
+- ✅ Developing and testing new logic
+- ✅ Analyzing performance before going live
+- ✅ Debugging entry/exit signals
+
+**To enable live trading:**
+
+1. Set `PAPER_TRADING_MODE=false` in `main.py`
+2. Restart the bot
+
+Live trading will send actual orders to Tastytrade API and require valid account credentials.
+
+### Configuration Files
+
+| File | Description |
+|------|-------------|
+| `.env.example` | Template for environment variables (copy to `.env` to configure) |
+| `.env` | Bot configuration (API keys, strategy parameters, etc.) |
+| `config.json` | Strategy and bot behavior settings (entry times, profit targets, etc.) |
+
+**Required Environment Variables** (in `.env`):
+```bash
+# Tastytrade API (Paper Mode)
+TASTY_REFRESH_TOKEN=your_token_here
+TASTY_ACCOUNT_ID=your_account_id_here
+
+# Discord Bot
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+DISCORD_GUILD_ID=your_guild_id_here
+DISCORD_MAIN_CHANNEL_ID=your_main_channel_id
+```
+
+**Important:** Never commit `.env` to version control — it contains sensitive credentials!
