@@ -1,10 +1,12 @@
 import os
 import asyncio
+import time as pytime
 import logging
 import pytz
 from datetime import datetime, time
 from dotenv import load_dotenv
 from tastytrade import Session, DXLinkStreamer
+from tastytrade.utils import TastytradeError
 import strategy
 import monitor
 import logger as trade_logger
@@ -36,6 +38,39 @@ logger = logging.getLogger("0dte-trader")
 
 load_dotenv()
 
+# Session health + retry/backoff
+SESSION_VALIDATE_EVERY_S = 60
+SESSION_REAUTH_MAX_ATTEMPTS = 5
+SESSION_REAUTH_BACKOFF_START_S = 1
+SESSION_REAUTH_BACKOFF_MAX_S = 60
+
+# Circuit breaker: exit after too many consecutive auth failures (guard will restart cleanly).
+SESSION_AUTH_FAIL_CIRCUIT_BREAKER = 8
+# If a trade cycle fails due to auth/network, retry once after hard re-auth.
+TRADE_CYCLE_RETRY_ON_AUTH_FAIL = 1
+
+def is_auth_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return ("unauthorized" in msg) or ("token" in msg and "invalid" in msg)
+
+
+def is_transient_network_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    # common intermittent failures observed in logs
+    needles = [
+        "handshake",
+        "timed out",
+        "timeout",
+        "ssl",
+        "connection reset",
+        "temporarily unavailable",
+        "network",
+    ]
+    return any(n in msg for n in needles)
+
+
+
+
 async def main():
     refresh_token = os.getenv("TASTY_REFRESH_TOKEN")
     client_secret = os.getenv("TASTY_CLIENT_SECRET")
@@ -45,11 +80,14 @@ async def main():
         logger.error("Missing refresh token, client_secret (provider_secret) or account_id in .env file.")
         return
 
+    def new_session():
+        return Session(refresh_token=refresh_token, provider_secret=client_secret)
+
     logger.info("Authenticating with Tastytrade (OAuth)...")
     print("--- 0DTE Trader Started ---")
     print("Authenticating...")
     try:
-        session = Session(refresh_token=refresh_token, provider_secret=client_secret)
+        session = new_session()
         logger.info("Authentication successful.")
     except Exception as e:
         logger.error(f"Authentication failed: {e}")
@@ -61,20 +99,101 @@ async def main():
     
     logger.info(f"Target Entry Times: {[t.strftime('%H:%M') for t in target_times]} UK Time")
 
+    # validate + reauth throttling state
+    last_validate_ts = 0.0
+    reauth_backoff_s = SESSION_REAUTH_BACKOFF_START_S
+    consecutive_auth_failures = 0
+
+
+
     try:
         while True:
             now_uk = datetime.now(uk_tz)
-            
-            # Connection Keep-Alive
-            if not session.validate():
-                 logger.info("Refreshing session...")
-                 session = Session(refresh_token=refresh_token, provider_secret=client_secret)
+
+            # Connection keep-alive (throttled)
+            # validate() is networked and can throw; don't run it every 10s.
+            if (pytime.time() - last_validate_ts) >= SESSION_VALIDATE_EVERY_S:
+                auth_ok = False
+                try:
+                    auth_ok = bool(session.validate())
+                except Exception as e:
+                    logger.warning(f"Session validate failed (will retry): {e}")
+                    auth_ok = False
+
+                if not auth_ok:
+                    logger.warning("Session invalid; attempting re-auth with backoff...")
+                    backoff = reauth_backoff_s
+                    for attempt in range(1, SESSION_REAUTH_MAX_ATTEMPTS + 1):
+                        try:
+                            session = new_session()
+                            try:
+                                auth_ok = bool(session.validate())
+                            except Exception as ve:
+                                logger.warning(f"Re-auth validate error: {ve}")
+                                auth_ok = False
+
+                            if auth_ok:
+                                break
+                        except Exception as re_err:
+                            logger.warning(f"Re-auth attempt {attempt} failed: {re_err}")
+
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, SESSION_REAUTH_BACKOFF_MAX_S)
+
+                    reauth_backoff_s = backoff if not auth_ok else SESSION_REAUTH_BACKOFF_START_S
+
+                last_validate_ts = pytime.time()
+                logger.info(f"HEALTH auth_ok={auth_ok} next_entries={[t.strftime('%H:%M') for t in target_times]}")
+
+                if auth_ok:
+                    consecutive_auth_failures = 0
+
+                if not auth_ok:
+                    consecutive_auth_failures += 1
+                    logger.error(f"Auth unhealthy (consecutive failures={consecutive_auth_failures}); skipping cycle.")
+                    if consecutive_auth_failures >= SESSION_AUTH_FAIL_CIRCUIT_BREAKER:
+                        logger.error("Circuit breaker tripped: too many consecutive auth failures; exiting for guard restart.")
+                        raise SystemExit(2)
+                    await asyncio.sleep(5)
+                    continue
+
 
             # Check if it's time to trade
             for target in target_times:
                 if now_uk.time().hour == target.hour and now_uk.time().minute == target.minute:
                      logger.info(f"Triggering Trade Entry for {target}...")
-                     await execute_trade_cycle(session, trigger_time=target)
+                     # Validate right before trade cycle (fast fail)
+                     try:
+                         ok = bool(session.validate())
+                     except Exception as ve:
+                         logger.warning(f"Pre-trade validate failed: {ve}")
+                         ok = False
+
+                     if not ok:
+                         logger.warning("Pre-trade session invalid; re-authenticating before trade cycle...")
+                         session = new_session()
+
+                     attempt = 0
+                     while True:
+                         try:
+                             await execute_trade_cycle(session, trigger_time=target)
+                             break
+                         except (TastytradeError, Exception) as e:
+                             if is_auth_error(e) or is_transient_network_error(e):
+                                 attempt += 1
+                                 logger.warning(f"Trade cycle failed due to auth/network ({type(e).__name__}: {e}). attempt={attempt}")
+                                 if attempt > TRADE_CYCLE_RETRY_ON_AUTH_FAIL:
+                                     consecutive_auth_failures += 1
+                                     logger.error(f"Trade cycle giving up (consecutive failures={consecutive_auth_failures}).")
+                                     if consecutive_auth_failures >= SESSION_AUTH_FAIL_CIRCUIT_BREAKER:
+                                         logger.error("Circuit breaker tripped after trade-cycle failures; exiting for guard restart.")
+                                         raise SystemExit(2)
+                                     break
+                                 # hard reset session and retry once
+                                 session = new_session()
+                                 continue
+                             # Unknown error: re-raise to avoid silent failure
+                             raise
                      # Sleep to avoid re-triggering in same minute
                      await asyncio.sleep(60)
                      break

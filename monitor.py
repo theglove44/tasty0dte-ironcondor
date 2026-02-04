@@ -105,11 +105,7 @@ async def close_trade(df, index, debit_to_close, current_profit, csv_path, sessi
             strategy_name = df.at[index, 'Strategy'] if 'Strategy' in df.columns and pd.notna(df.at[index, 'Strategy']) else "Unknown"
 
             if discord_notify is None:
-            logger.info(f"Trade {index}: Discord notifier not configured; skipping notification.")
-            return
-
-        if discord_notify is None:
-                logger.info(f"Trade {index}: Discord notifier not configured; skipping expiration notification.")
+                logger.info(f"Trade {index}: Discord notifier not configured; skipping notification.")
                 return
 
             payload = discord_notify.format_trade_close_payload(
