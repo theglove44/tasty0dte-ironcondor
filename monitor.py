@@ -1,11 +1,13 @@
 import asyncio
+import re
 import pandas as pd
 import logging
+import pytz
 from datetime import datetime, time
 from decimal import Decimal
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.dxfeed import Quote, Summary
-
+import strategy as strategy_mod
 import sys
 try:
     from local import discord_notify
@@ -79,29 +81,7 @@ async def close_trade(df, index, debit_to_close, current_profit, csv_path, sessi
 
         # Send Discord webhook notification
         try:
-            # Fetch SPX spot for the notification
-            spx_spot = None
-            if session:
-                try:
-                    async with DXLinkStreamer(session) as streamer:
-                        await streamer.subscribe(Quote, ["SPX"])
-                        start_time = datetime.now()
-                        async for event in streamer.listen(Quote):
-                            if (datetime.now() - start_time).seconds > 3:
-                                break
-                            events = event if isinstance(event, list) else [event]
-                            for e in events:
-                                if isinstance(e, Quote) and e.event_symbol == "SPX":
-                                    if e.bid_price and e.ask_price:
-                                        spx_spot = float((e.bid_price + e.ask_price) / 2)
-                                    elif e.ask_price:
-                                        spx_spot = float(e.ask_price)
-                                    break
-                            if spx_spot:
-                                break
-                except:
-                    pass
-
+            spx_spot = await strategy_mod.get_spx_spot(session) if session else None
             strategy_name = df.at[index, 'Strategy'] if 'Strategy' in df.columns and pd.notna(df.at[index, 'Strategy']) else "Unknown"
 
             if discord_notify is None:
@@ -279,16 +259,20 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                     return (q.bid_price + q.ask_price) / 2
                 return q.ask_price if q.ask_price else q.bid_price # fallback
             
-            sc_mark = float(get_mark(row['Short Call']))
-            lc_mark = float(get_mark(row['Long Call']))
-            sp_mark = float(get_mark(row['Short Put']))
-            lp_mark = float(get_mark(row['Long Put']))
-            
+            sc_mark = get_mark(row['Short Call'])
+            lc_mark = get_mark(row['Long Call'])
+            sp_mark = get_mark(row['Short Put'])
+            lp_mark = get_mark(row['Long Put'])
+
             if sc_mark is None or lc_mark is None or sp_mark is None or lp_mark is None:
                 status_lines.append(f"Trade {index}: Waiting for data...")
-                # logger.warning(f"Missing quotes for trade {index}. Skipping P/L check.")
                 continue
-            
+
+            sc_mark = float(sc_mark)
+            lc_mark = float(lc_mark)
+            sp_mark = float(sp_mark)
+            lp_mark = float(lp_mark)
+
             # Calculate Debit to Close (Buying back shorts, Selling longs)
             # Debit = (Shorts Buyback) - (Longs Sell)
             debit_to_close = (sc_mark + sp_mark) - (lc_mark + lp_mark)
@@ -300,9 +284,7 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             
             current_profit = initial_credit - debit_to_close
             
-            # Helper to parse symbol (e.g., .SPXW251210C6875)
             def parse_strike(sym):
-                import re
                 match = re.search(r'[CP](\d+)$', sym)
                 return match.group(1) if match else "?"
 
@@ -319,14 +301,13 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                 try:
                     ivr = float(row["IV Rank"])
                     iv_rank_str = f", IVR={ivr:.2f}"
-                except:
+                except Exception:
                     pass
             
             # Check Time Exit for 30 Delta Strategy
             strategy_name = row['Strategy'] if 'Strategy' in row and pd.notna(row['Strategy']) else "20 Delta"
             
             # UK Time Check
-            import pytz
             uk_tz = pytz.timezone('Europe/London')
             now_uk = datetime.now(uk_tz)
             
@@ -392,39 +373,7 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
 
     logger.info("Market Closed. Checking for EOD Expirations...")
     
-    # We need the SPX Spot Price to calculate settlement/expiration value.
-    # We can fetch a quote for "SPX"
-    # Note: SPX spot symbol might be "SPX" or "$SPX" depending on provider, 
-    # but Tastytrade usually uses "SPX" for index.
-    
-    spx_price = None
-    try:
-        async with DXLinkStreamer(session) as streamer:
-            # print("DEBUG: Subscribing to SPX")
-            await streamer.subscribe(Quote, ["SPX"])
-            start_time = datetime.now()
-            async for event in streamer.listen(Quote):
-                # print(f"DEBUG: Event received: {event}")
-                if (datetime.now() - start_time).seconds > 5:
-                    logger.warning("Timeout waiting for SPX quote.")
-                    break
-                
-                # Check for list or single object
-                events = event if isinstance(event, list) else [event]
-                
-                for e in events:
-                    if isinstance(e, Quote) and e.event_symbol == "SPX":
-                        if e.bid_price and e.ask_price:
-                            spx_price = float(e.bid_price + e.ask_price) / 2
-                            break
-                        elif e.ask_price:
-                            spx_price = float(e.ask_price)
-                            break
-                if spx_price:
-                    break
-    except Exception as e:
-        logger.error(f"Error fetching SPX spot for EOD: {e}")
-        return
+    spx_price = await strategy_mod.get_spx_spot(session, timeout_s=5)
 
     if spx_price is None:
         logger.warning("Could not fetch SPX spot price. Cannot process EOD expirations.")
@@ -443,17 +392,8 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
             # Example: .SPXW251210C6875
             
             def get_strike_from_symbol(sym):
-                # .SPXW 25 12 10 C 6875
-                # Last part is strike. But checking format is tricky.
-                # Regex is safer.
-                import re
                 match = re.search(r'[CP](\d+)$', sym)
-                if match:
-                    # Strike is usually multiplied? No, Tasty symbols usually have strike.
-                    # Wait, verification output showed: '.SPXW251210C6875' and strike Decimal('6875.0')
-                    # So the string ends with the strike.
-                    return float(match.group(1))
-                return None
+                return float(match.group(1)) if match else None
 
             short_call_strike = get_strike_from_symbol(row['Short Call'])
             long_call_strike = get_strike_from_symbol(row['Long Call'])
@@ -492,6 +432,10 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
             try:
                 strategy_name = df.at[index, 'Strategy'] if 'Strategy' in df.columns and pd.notna(df.at[index, 'Strategy']) else "Unknown"
 
+                if discord_notify is None:
+                    logger.info(f"Trade {index}: Discord notifier not configured; skipping expiration notification.")
+                    continue
+
                 payload = discord_notify.format_trade_close_payload(
                     strategy_name=strategy_name,
                     short_call_symbol=df.at[index, 'Short Call'],
@@ -524,7 +468,6 @@ def is_market_closed():
     """
     Returns True if current UK time is >= 21:00 (Market Close).
     """
-    import pytz
     uk_tz = pytz.timezone('Europe/London')
     now_uk = datetime.now(uk_tz)
     return now_uk.hour >= 21
