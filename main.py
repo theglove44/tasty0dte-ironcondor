@@ -46,6 +46,36 @@ SESSION_AUTH_FAIL_CIRCUIT_BREAKER = 8
 # If a trade cycle fails due to auth/network, retry once after hard re-auth.
 TRADE_CYCLE_RETRY_ON_AUTH_FAIL = 1
 
+
+STRATEGY_CONFIGS = [
+    {'name': "20 Delta", 'code': "IC-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25},
+    {'name': "30 Delta", 'code': "IC-30D", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
+    {'name': "Iron Fly V1", 'code': "IF-V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
+    {'name': "Iron Fly V2", 'code': "IF-V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
+    {'name': "Iron Fly V3", 'code': "IF-V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
+    {'name': "Iron Fly V4", 'code': "IF-V4", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
+]
+
+
+def _is_trigger_time_allowed(allowed_times, trigger_time):
+    if not allowed_times or not trigger_time:
+        return True
+    return any(
+        t.hour == trigger_time.hour and t.minute == trigger_time.minute
+        for t in allowed_times
+    )
+
+
+def _build_strategy_id(strategy_name, trigger_time):
+    t_code = trigger_time.strftime("%H%M") if trigger_time else "0000"
+    strategy_code = "UNK"
+    for strategy_cfg in STRATEGY_CONFIGS:
+        if strategy_cfg['name'] in strategy_name:
+            strategy_code = strategy_cfg['code']
+            break
+    return f"{strategy_code}-{t_code}"
+
+
 def is_auth_error(e: Exception) -> bool:
     msg = str(e).lower()
     return ("unauthorized" in msg) or ("token" in msg and "invalid" in msg)
@@ -198,19 +228,9 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
     # Fetch IV Rank (Common for both)
     iv_rank = await strategy.fetch_spx_iv_rank(session)
     
-    # Define Strategies
     # Note: Times are in UK time as per main loop logic (14:45, 15:00, 15:30)
     # 3pm GMT is 15:00 UK time (usually, assuming standard winter time or alignment)
-    strategies = [
-        {'name': "20 Delta", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25},
-        {'name': "30 Delta", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
-        {'name': "Iron Fly V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
-        {'name': "Iron Fly V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
-        {'name': "Iron Fly V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
-        {'name': "Iron Fly V4", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 30)]}
-    ]
-    
-    for strat in strategies:
+    for strat in STRATEGY_CONFIGS:
         strat_name = strat['name']
         strat_type = strat['type']
         target_delta = strat['target_delta']
@@ -218,18 +238,8 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         allowed_times = strat.get('allowed_times')
         
         # Check Entry Time
-        if allowed_times and trigger_time:
-            # simple check: if trigger_time (HH:MM) is in allowed_times
-            # time objects comparison should work for hour/minute
-            is_allowed = False
-            for t in allowed_times:
-                if t.hour == trigger_time.hour and t.minute == trigger_time.minute:
-                    is_allowed = True
-                    break
-            
-            if not is_allowed:
-                # logger.info(f"Skipping {strat_name} at {trigger_time}")
-                continue
+        if not _is_trigger_time_allowed(allowed_times, trigger_time):
+            continue
 
         logger.info(f"Executing Strategy: {strat_name} (Delta {target_delta}, Type {strat_type})")
         
@@ -282,20 +292,7 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         
         # 5. Log Trade
         
-        # Generate Strategy ID
-        t_code = "0000"
-        if trigger_time:
-             t_code = trigger_time.strftime("%H%M")
-        
-        s_code = "UNK"
-        if "20 Delta" in strat_name: s_code = "IC-20D"
-        elif "30 Delta" in strat_name: s_code = "IC-30D"
-        elif "Iron Fly V1" in strat_name: s_code = "IF-V1"
-        elif "Iron Fly V2" in strat_name: s_code = "IF-V2"
-        elif "Iron Fly V3" in strat_name: s_code = "IF-V3"
-        elif "Iron Fly V4" in strat_name: s_code = "IF-V4"
-        
-        strategy_id = f"{s_code}-{t_code}"
+        strategy_id = _build_strategy_id(strat_name, trigger_time)
         
         trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank, strategy_name=strat_name, strategy_id=strategy_id)
         logger.info(f"[{strat_name}] Trade Logged successfully. IV Rank: {iv_rank}")

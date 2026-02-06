@@ -17,6 +17,53 @@ logger = logging.getLogger("0dte-monitor")
 
 # Track lines for console refresh
 _last_lines_count = 0
+_NUMERIC_COLS_TO_FORMAT = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
+_TEXT_COLS_FOR_UPDATES = ['Exit Time', 'Notes']
+
+
+def _normalize_numeric_columns(df):
+    for col in _NUMERIC_COLS_TO_FORMAT:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
+
+
+def _ensure_text_columns(df, columns=None):
+    for col in (columns or _TEXT_COLS_FOR_UPDATES):
+        if col in df.columns:
+            df[col] = df[col].astype('object')
+
+
+def _append_note(df, index, note):
+    if 'Notes' not in df.columns:
+        return
+    current_notes = df.at[index, 'Notes']
+    if pd.isna(current_notes):
+        current_notes = ""
+    df.at[index, 'Notes'] = f"{current_notes} | {note}"
+
+
+def _quote_mark(quote):
+    if quote is None:
+        return None
+    if quote.bid_price and quote.ask_price:
+        return (quote.bid_price + quote.ask_price) / 2
+    return quote.ask_price if quote.ask_price else quote.bid_price
+
+
+def _mark_for_symbol(quotes, symbol):
+    return _quote_mark(quotes.get(symbol))
+
+
+def _parse_strike_token(symbol):
+    match = re.search(r'[CP](\d+)$', symbol)
+    return match.group(1) if match else "?"
+
+
+def _parse_strike_float(symbol):
+    token = _parse_strike_token(symbol)
+    if token == "?":
+        return None
+    return float(token)
 
 def refresh_console(lines: list, reset_cursor: bool = False):
     """
@@ -49,32 +96,12 @@ async def close_trade(df, index, debit_to_close, current_profit, csv_path, sessi
     Optionally sends Discord webhook notification.
     """
     try:
+        _ensure_text_columns(df)
         df.at[index, 'Status'] = 'CLOSED'
         df.at[index, 'Exit Time'] = datetime.now().strftime("%H:%M:%S")
         df.at[index, 'Exit P/L'] = round(current_profit, 2)
-
-        current_notes = df.at[index, 'Notes']
-        if pd.isna(current_notes):
-            current_notes = ""
-        df.at[index, 'Notes'] = f"{current_notes} | Closed at Debit: {debit_to_close:.2f}"
-
-        # Enforce 2 decimal formatting for saving
-        # We need to make sure we don't turn everything into strings permanently if we continue using df in memory,
-        # but here we are just saving to CSV.
-        # However, checking eod expiration reads this CSV later.
-        # It's safer to round the specific columns in the dataframe or format them as strings for output.
-        # Let's simple format the specific cells we just touched, and maybe ensure the other float columns are formatted?
-        # Actually, to be safe and consistent with "Crazy decimals", let's format the entire relevant columns.
-
-        cols_to_format = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
-        for col in cols_to_format:
-            if col in df.columns:
-                # Round to 2 decimals first
-                # For IV Rank specifically, we might want to ensure normalization if we are touching it,
-                # but 'close_trade' usually just reads and saves.
-                # The normalization should happen at cleanup or entry.
-                # Here we just ensure it stays clean.
-                df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
+        _append_note(df, index, f"Closed at Debit: {debit_to_close:.2f}")
+        _normalize_numeric_columns(df)
 
         df.to_csv(csv_path, index=False, float_format='%.2f')
         logger.info(f"Trade {index} closed and saved to {csv_path}")
@@ -248,21 +275,10 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
     
     for index, row in open_trades.iterrows():
         try:
-            # Get Prices (using mid price if available, otherwise mark or last)
-            # Quote object usually has bidPrice, askPrice.
-            
-            def get_mark(symbol):
-                if symbol not in quotes:
-                    return None
-                q = quotes[symbol]
-                if q.bid_price and q.ask_price:
-                    return (q.bid_price + q.ask_price) / 2
-                return q.ask_price if q.ask_price else q.bid_price # fallback
-            
-            sc_mark = get_mark(row['Short Call'])
-            lc_mark = get_mark(row['Long Call'])
-            sp_mark = get_mark(row['Short Put'])
-            lp_mark = get_mark(row['Long Put'])
+            sc_mark = _mark_for_symbol(quotes, row['Short Call'])
+            lc_mark = _mark_for_symbol(quotes, row['Long Call'])
+            sp_mark = _mark_for_symbol(quotes, row['Short Put'])
+            lp_mark = _mark_for_symbol(quotes, row['Long Put'])
 
             if sc_mark is None or lc_mark is None or sp_mark is None or lp_mark is None:
                 status_lines.append(f"Trade {index}: Waiting for data...")
@@ -284,14 +300,10 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             
             current_profit = initial_credit - debit_to_close
             
-            def parse_strike(sym):
-                match = re.search(r'[CP](\d+)$', sym)
-                return match.group(1) if match else "?"
-
-            sc_str = parse_strike(row['Short Call'])
-            lc_str = parse_strike(row['Long Call'])
-            sp_str = parse_strike(row['Short Put'])
-            lp_str = parse_strike(row['Long Put'])
+            sc_str = _parse_strike_token(row['Short Call'])
+            lc_str = _parse_strike_token(row['Long Call'])
+            sp_str = _parse_strike_token(row['Short Put'])
+            lp_str = _parse_strike_token(row['Long Put'])
             
             description = f"SPX IC {sc_str}/{lc_str}C / {sp_str}/{lp_str}P"
             
@@ -331,10 +343,8 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                     status_lines.append(f"   >>> TIME EXIT REACHED (Read-Only)")
                 else:
                     logger.info(f"Time Exit (18:00 UK) Reached for Trade {index} ({strategy_name})! Closing...")
-                    # Update notes to reflect Time Exit
-                    current_notes = df.at[index, 'Notes']
-                    if pd.isna(current_notes): current_notes = ""
-                    df.at[index, 'Notes'] = f"{current_notes} | Time Exit 18:00"
+                    _ensure_text_columns(df, ['Notes'])
+                    _append_note(df, index, "Time Exit 18:00")
 
                     await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason="Time Exit (18:00 UK)")
                     trades_closed += 1
@@ -381,24 +391,14 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
 
     logger.info(f"SPX Spot Price for Expiration: {spx_price}")
     
+    _ensure_text_columns(df)
     trades_expired = 0
     for index, row in open_trades.iterrows():
         try:
-            # Parse Strikes from Symbol string or another way?
-            # The CSV columns `Short Call`, etc. currently hold the SYMBOL: ".SPXW..."
-            # We need the strike.
-            # We can extract it from the symbol string or if we stored it (we didn't explicitly store strikes as columns, only symbols).
-            # Tastytrade SPX symbols: .SPXWYYMMDDC##### or P#####
-            # Example: .SPXW251210C6875
-            
-            def get_strike_from_symbol(sym):
-                match = re.search(r'[CP](\d+)$', sym)
-                return float(match.group(1)) if match else None
-
-            short_call_strike = get_strike_from_symbol(row['Short Call'])
-            long_call_strike = get_strike_from_symbol(row['Long Call'])
-            short_put_strike = get_strike_from_symbol(row['Short Put'])
-            long_put_strike = get_strike_from_symbol(row['Long Put'])
+            short_call_strike = _parse_strike_float(row['Short Call'])
+            long_call_strike = _parse_strike_float(row['Long Call'])
+            short_put_strike = _parse_strike_float(row['Short Put'])
+            long_put_strike = _parse_strike_float(row['Long Put'])
             
             if not all([short_call_strike, long_call_strike, short_put_strike, long_put_strike]):
                 logger.error(f"Could not parse strikes for trade {index}. Skipping.")
@@ -422,9 +422,7 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
             df.at[index, 'Status'] = 'EXPIRED'
             df.at[index, 'Exit Time'] = datetime.now().strftime("%H:%M:%S")
             df.at[index, 'Exit P/L'] = round(eod_pl, 2)
-            
-            current_notes = row['Notes'] if pd.notna(row['Notes']) else ""
-            df.at[index, 'Notes'] = f"{current_notes} | Settled at {spx_price:.2f}"
+            _append_note(df, index, f"Settled at {spx_price:.2f}")
 
             trades_expired += 1
 
@@ -456,11 +454,7 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
             logger.error(f"Error expiring trade {index}: {e}")
 
     if trades_expired > 0:
-        cols_to_format = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
-        for col in cols_to_format:
-            if col in df.columns:
-                 df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
-
+        _normalize_numeric_columns(df)
         df.to_csv(csv_path, index=False, float_format='%.2f')
         logger.info(f"Expired {trades_expired} trades.")
 
