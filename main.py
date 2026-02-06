@@ -5,7 +5,7 @@ import logging
 import pytz
 from datetime import datetime, time
 from dotenv import load_dotenv
-from tastytrade import Session, DXLinkStreamer
+from tastytrade import Session
 from tastytrade.utils import TastytradeError
 import strategy
 import monitor
@@ -38,11 +38,8 @@ logger = logging.getLogger("0dte-trader")
 
 load_dotenv()
 
-# Session health + retry/backoff
-SESSION_VALIDATE_EVERY_S = 60
-SESSION_REAUTH_MAX_ATTEMPTS = 5
-SESSION_REAUTH_BACKOFF_START_S = 1
-SESSION_REAUTH_BACKOFF_MAX_S = 60
+# Session health check interval (SDK v12 auto-refreshes tokens, so this is a lightweight keepalive)
+SESSION_VALIDATE_EVERY_S = 120
 
 # Circuit breaker: exit after too many consecutive auth failures (guard will restart cleanly).
 SESSION_AUTH_FAIL_CIRCUIT_BREAKER = 8
@@ -81,7 +78,7 @@ async def main():
         return
 
     def new_session():
-        return Session(refresh_token=refresh_token, provider_secret=client_secret)
+        return Session(provider_secret=client_secret, refresh_token=refresh_token)
 
     logger.info("Authenticating with Tastytrade (OAuth)...")
     print("--- 0DTE Trader Started ---")
@@ -99,56 +96,36 @@ async def main():
     
     logger.info(f"Target Entry Times: {[t.strftime('%H:%M') for t in target_times]} UK Time")
 
-    # validate + reauth throttling state
+    # Session health state
     last_validate_ts = 0.0
-    reauth_backoff_s = SESSION_REAUTH_BACKOFF_START_S
     consecutive_auth_failures = 0
-
-
 
     try:
         while True:
             now_uk = datetime.now(uk_tz)
 
-            # Connection keep-alive (throttled)
-            # validate() is networked and can throw; don't run it every 10s.
+            # Lightweight health check (SDK v12 auto-refreshes tokens)
             if (pytime.time() - last_validate_ts) >= SESSION_VALIDATE_EVERY_S:
                 auth_ok = False
                 try:
                     auth_ok = bool(session.validate())
                 except Exception as e:
-                    logger.warning(f"Session validate failed (will retry): {e}")
-                    auth_ok = False
+                    logger.warning(f"Session validate failed: {e}")
 
                 if not auth_ok:
-                    logger.warning("Session invalid; attempting re-auth with backoff...")
-                    backoff = reauth_backoff_s
-                    for attempt in range(1, SESSION_REAUTH_MAX_ATTEMPTS + 1):
-                        try:
-                            session = new_session()
-                            try:
-                                auth_ok = bool(session.validate())
-                            except Exception as ve:
-                                logger.warning(f"Re-auth validate error: {ve}")
-                                auth_ok = False
-
-                            if auth_ok:
-                                break
-                        except Exception as re_err:
-                            logger.warning(f"Re-auth attempt {attempt} failed: {re_err}")
-
-                        await asyncio.sleep(backoff)
-                        backoff = min(backoff * 2, SESSION_REAUTH_BACKOFF_MAX_S)
-
-                    reauth_backoff_s = backoff if not auth_ok else SESSION_REAUTH_BACKOFF_START_S
+                    logger.warning("Session invalid; re-creating...")
+                    try:
+                        session = new_session()
+                        auth_ok = True
+                    except Exception as re_err:
+                        logger.error(f"Re-auth failed: {re_err}")
 
                 last_validate_ts = pytime.time()
                 logger.info(f"HEALTH auth_ok={auth_ok} next_entries={[t.strftime('%H:%M') for t in target_times]}")
 
                 if auth_ok:
                     consecutive_auth_failures = 0
-
-                if not auth_ok:
+                else:
                     consecutive_auth_failures += 1
                     logger.error(f"Auth unhealthy (consecutive failures={consecutive_auth_failures}); skipping cycle.")
                     if consecutive_auth_failures >= SESSION_AUTH_FAIL_CIRCUIT_BREAKER:
@@ -325,32 +302,11 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
 
         # 6. Send Discord notification for trade open
         if discord_notify is None:
-            logger.info(f"[{strat_name}] Discord notifier not configured (local/discord_notify.py missing); skipping.")
-            return
+            logger.info(f"[{strat_name}] Discord notifier not configured (local/discord_notify.py missing); skipping notification.")
+            continue
 
         try:
-            from tastytrade.dxfeed import Quote
-            # Fetch SPX spot for the notification
-            spx_spot = None
-            try:
-                async with DXLinkStreamer(session) as streamer:
-                    await streamer.subscribe(Quote, ["SPX"])
-                    start_time = datetime.now()
-                    async for event in streamer.listen(Quote):
-                        if (datetime.now() - start_time).seconds > 3:
-                            break
-                        events = event if isinstance(event, list) else [event]
-                        for e in events:
-                            if isinstance(e, Quote) and e.event_symbol == "SPX":
-                                if e.bid_price and e.ask_price:
-                                    spx_spot = float((e.bid_price + e.ask_price) / 2)
-                                elif e.ask_price:
-                                    spx_spot = float(e.ask_price)
-                                break
-                        if spx_spot:
-                            break
-            except:
-                pass
+            spx_spot = await strategy.get_spx_spot(session)
 
             # Calculate wing width and credit percentage
             wing_width = width
