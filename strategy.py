@@ -7,6 +7,19 @@ import logging
 
 logger = logging.getLogger("0dte-strategy")
 
+async def _unwrap_awaitable(x, max_depth: int = 5):
+    """Await nested awaitables (some SDK calls return coroutine objects).
+
+    Raises underlying exceptions; does not swallow auth/network failures.
+    """
+    import inspect
+    for _ in range(max_depth):
+        if not inspect.isawaitable(x):
+            break
+        x = await x
+    return x
+
+
 def get_0dte_expiration_date():
     return date.today()
 
@@ -20,7 +33,7 @@ async def fetch_spx_iv_rank(session: Session) -> float:
     """
     logger.info("Fetching SPX IV Rank...")
     try:
-        metrics = get_market_metrics(session, ["SPX"])
+        metrics = await _unwrap_awaitable(get_market_metrics(session, ["SPX"]))
         # SDK versions differ: get_market_metrics may return an awaitable.
         try:
             import inspect
@@ -50,20 +63,7 @@ async def fetch_spx_option_chain(session: Session):
     logger.info("Fetching SPX option chain...")
     symbol = "SPX"
 
-    chain = get_option_chain(session, symbol)
-
-    # Handle async SDK versions
-    try:
-        import inspect
-        # Some SDK builds return nested awaitables (coroutine -> coroutine).
-        # Unwrap up to a small limit.
-        for _ in range(3):
-            if not inspect.isawaitable(chain):
-                break
-            chain = await chain
-    except Exception:
-        pass
-
+    chain = await _unwrap_awaitable(get_option_chain(session, symbol))
     return chain
 def filter_for_0dte(chain: dict):
     """
