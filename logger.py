@@ -148,10 +148,6 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             "OPEN",
             "",
             "",
-            "0DTE Iron Condor",
+            f"0DTE {strategy_name}",
             f"{ivr_val:.2f}"
         ])
-        
-def log_trade_exit(trade_id, exit_time, pl, notes=""):
-    # This would require finding the row and updating it.
-    pass

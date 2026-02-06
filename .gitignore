@@ -33,3 +33,10 @@ paper_trades.csv
 paper_trades.csv.*
 *.csv.bak
 market_session_guard.sh
+*.bak
+*.bak.*
+*.log.bak*
+stderr.log.bak*
+run_autotrader.sh.bak*
+market_session_guard.sh.bak*
+main.py.bak*
