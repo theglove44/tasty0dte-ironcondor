@@ -45,7 +45,11 @@ async def fetch_spx_option_chain(session: Session):
     # Handle async SDK versions
     try:
         import inspect
-        if inspect.isawaitable(chain):
+        # Some SDK builds return nested awaitables (coroutine -> coroutine).
+        # Unwrap up to a small limit.
+        for _ in range(3):
+            if not inspect.isawaitable(chain):
+                break
             chain = await chain
     except Exception:
         pass
