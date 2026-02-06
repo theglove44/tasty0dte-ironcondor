@@ -78,7 +78,7 @@ def _build_strategy_id(strategy_name, trigger_time):
 
 def is_auth_error(e: Exception) -> bool:
     msg = str(e).lower()
-    return ("unauthorized" in msg) or ("token" in msg and "invalid" in msg)
+    return ("unauthorized" in msg) or ("token" in msg and "invalid" in msg) or ("invalid_grant" in msg)
 
 
 def is_transient_network_error(e: Exception) -> bool:
