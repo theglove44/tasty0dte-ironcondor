@@ -32,16 +32,25 @@ async def fetch_spx_iv_rank(session: Session) -> float:
 
 
 async def fetch_spx_option_chain(session: Session):
-    """
-    Fetches the SPX option chain.
+    """Fetch the SPX option chain.
+
+    tastytrade SDK versions differ: in some, get_option_chain is sync; in others
+    it returns an awaitable. Handle both.
     """
     logger.info("Fetching SPX option chain...")
-    symbol = "SPX" 
-    
-    # get_option_chain returns a Dict[date, List[Option]]
-    chain = get_option_chain(session, symbol)
-    return chain
+    symbol = "SPX"
 
+    chain = get_option_chain(session, symbol)
+
+    # Handle async SDK versions
+    try:
+        import inspect
+        if inspect.isawaitable(chain):
+            chain = await chain
+    except Exception:
+        pass
+
+    return chain
 def filter_for_0dte(chain: dict):
     """
     Filters the chain for today's expiration.
