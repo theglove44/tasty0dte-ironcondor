@@ -21,8 +21,18 @@ async def fetch_spx_iv_rank(session: Session) -> float:
     logger.info("Fetching SPX IV Rank...")
     try:
         metrics = get_market_metrics(session, ["SPX"])
-        if metrics and metrics[0].implied_volatility_index_rank:
-            iv_rank = float(metrics[0].implied_volatility_index_rank) # It comes as string or decimal
+        # SDK versions differ: get_market_metrics may return an awaitable.
+        try:
+            import inspect
+            for _ in range(3):
+                if not inspect.isawaitable(metrics):
+                    break
+                metrics = await metrics
+        except Exception:
+            pass
+
+        if metrics and getattr(metrics[0], implied_volatility_index_rank, None):
+            iv_rank = float(metrics[0].implied_volatility_index_rank)
             logger.info(f"SPX IV Rank: {iv_rank}")
             return iv_rank
     except Exception as e:
