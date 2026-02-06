@@ -16,4 +16,4 @@ fi
 # -i prevents the system from idle sleeping while the command is running
 echo "Starting 0DTE Trader at $(date)"
 # Using 'python' from the activated venv
-caffeinate -i python main.py
+exec caffeinate -i python -u main.py
