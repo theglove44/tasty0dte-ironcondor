@@ -138,7 +138,7 @@ async def main():
             if (pytime.time() - last_validate_ts) >= SESSION_VALIDATE_EVERY_S:
                 auth_ok = False
                 try:
-                    auth_ok = bool(session.validate())
+                    auth_ok = bool(await session.validate())
                 except Exception as e:
                     logger.warning(f"Session validate failed: {e}")
 
@@ -171,7 +171,7 @@ async def main():
                      logger.info(f"Triggering Trade Entry for {target}...")
                      # Validate right before trade cycle (fast fail)
                      try:
-                         ok = bool(session.validate())
+                         ok = bool(await session.validate())
                      except Exception as ve:
                          logger.warning(f"Pre-trade validate failed: {ve}")
                          ok = False
