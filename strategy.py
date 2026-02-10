@@ -4,6 +4,7 @@ from tastytrade.instruments import NestedOptionChain, Option
 from tastytrade.utils import get_tasty_monthly
 import pandas as pd
 import logging
+import inspect
 
 logger = logging.getLogger("0dte-strategy")
 
@@ -12,7 +13,6 @@ async def _unwrap_awaitable(x, max_depth: int = 5):
 
     Raises underlying exceptions; does not swallow auth/network failures.
     """
-    import inspect
     for _ in range(max_depth):
         if not inspect.isawaitable(x):
             break
@@ -34,23 +34,16 @@ async def fetch_spx_iv_rank(session: Session) -> float:
     logger.info("Fetching SPX IV Rank...")
     try:
         metrics = await _unwrap_awaitable(get_market_metrics(session, ["SPX"]))
-        # SDK versions differ: get_market_metrics may return an awaitable.
-        try:
-            import inspect
-            for _ in range(3):
-                if not inspect.isawaitable(metrics):
-                    break
-                metrics = await metrics
-        except Exception:
-            pass
 
-        if metrics and getattr(metrics[0], implied_volatility_index_rank, None):
+        if metrics and getattr(metrics[0], 'implied_volatility_index_rank', None) is not None:
             iv_rank = float(metrics[0].implied_volatility_index_rank)
             logger.info(f"SPX IV Rank: {iv_rank}")
             return iv_rank
+        else:
+            logger.warning("IV Rank attribute not found or metrics empty")
     except Exception as e:
-        logger.error(f"Error fetching IV Rank: {e}")
-    
+        logger.error(f"Error fetching IV Rank: {type(e).__name__}: {e}")
+
     return 0.0
 
 
@@ -103,8 +96,8 @@ async def get_spx_spot(session: Session, timeout_s: int = 3) -> float | None:
                             return float((e.bid_price + e.ask_price) / 2)
                         elif e.ask_price:
                             return float(e.ask_price)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to get SPX spot: {type(e).__name__}: {e}")
     return None
 
 

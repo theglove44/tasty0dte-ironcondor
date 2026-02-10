@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pandas as pd
 import asyncio
 import os
+from datetime import datetime
 from monitor import check_open_positions, check_eod_expiration
 from tastytrade.dxfeed import Quote
 
@@ -12,7 +13,7 @@ class TestMonitor(unittest.TestCase):
     def setUp(self):
         self.csv_path = "test_paper_trades.csv"
         data = {
-            'Date': ['2023-10-27'],
+            'Date': [datetime.now().strftime('%Y-%m-%d')],
             'Entry Time': ['10:00:00'],
             'Symbol': ['SPX'],
             'Strategy': ['20 Delta'],

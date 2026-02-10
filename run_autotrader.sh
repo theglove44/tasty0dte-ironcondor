@@ -1,19 +1,23 @@
 #!/bin/bash
+#
+# Simple startup script for tasty0dte
+# No network checks - the bot handles connectivity gracefully
+#
 
-# Navigate to the directory where this script is located
-# This makes the script portable and safe for git even if directories change
 cd "$(dirname "$0")"
 
-# Activate the virtual environment
+# Activate venv
 if [ -d "venv" ]; then
     source venv/bin/activate
 else
-    echo "Error: Virtual environment 'venv' not found in $(pwd)"
+    echo "Error: Virtual environment 'venv' not found"
     exit 1
 fi
 
-# Run the python script with caffeinate to prevent sleep
-# -i prevents the system from idle sleeping while the command is running
-echo "Starting 0DTE Trader at $(date)"
-# Using 'python' from the activated venv
-exec caffeinate -i python -u main.py
+echo "[$(date)] Starting 0DTE Trader..."
+
+# Run with caffeinate to prevent sleep (macOS)
+# The bot handles all errors internally and never crashes
+caffeinate -i python -u main.py 2>&1
+
+echo "[$(date)] 0DTE Trader exited"

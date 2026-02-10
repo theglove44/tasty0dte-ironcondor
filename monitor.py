@@ -147,7 +147,27 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
 
     # Filter for OPEN trades
     open_trades = df[df['Status'] == 'OPEN']
-    
+
+    # Auto-expire stale 0DTE trades from prior days
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    stale_mask = (df['Status'] == 'OPEN') & (df['Date'].astype(str) < today_str)
+    if stale_mask.any():
+        _ensure_text_columns(df)
+        for idx in df[stale_mask].index:
+            logger.warning(f"Auto-expiring stale trade {idx} from {df.at[idx, 'Date']}")
+            df.at[idx, 'Status'] = 'EXPIRED'
+            df.at[idx, 'Exit Time'] = '00:00:00'
+            credit = float(df.at[idx, 'Credit Collected'])
+            call_width = abs((_parse_strike_float(df.at[idx, 'Short Call']) or 0) - (_parse_strike_float(df.at[idx, 'Long Call']) or 0))
+            put_width = abs((_parse_strike_float(df.at[idx, 'Short Put']) or 0) - (_parse_strike_float(df.at[idx, 'Long Put']) or 0))
+            max_width = max(call_width, put_width)
+            df.at[idx, 'Exit P/L'] = round(credit - max_width, 2)
+            _append_note(df, idx, "Stale 0DTE: auto-expired (prior day)")
+        _normalize_numeric_columns(df)
+        df.to_csv(csv_path, index=False, float_format='%.2f')
+        df = pd.read_csv(csv_path)
+        open_trades = df[df['Status'] == 'OPEN']
+
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     status_lines = []
 
@@ -231,7 +251,7 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                 for t in tasks:
                     t.cancel()
     except Exception as e:
-        logger.error(f"Error streaming quotes: {e}")
+        logger.error(f"Error streaming quotes: {type(e).__name__}: {e}")
         return
 
     if not quotes:
