@@ -5,6 +5,8 @@
 > [!NOTE]
 > This application runs in **Paper Trading Mode** by default, logging "fills" to `paper_trades.csv` instead of sending live orders.
 
+---
+
 ## Key Features
 
 - **Automated Entry**: Precise entry execution at **14:45**, **15:00**, and **15:30** (UK Time).
@@ -14,7 +16,7 @@
     - **Time Exits**: Enforces hard exits (e.g., 18:00 UK) for specific strategies to avoid end-of-day risks.
     - **EOD Handling**: Manages settlement and expiration for positions held into the close.
 - **Real-Time Monitoring**: Streams live quotes to track position value and trigger exits instantly.
-- **Data Analysis**: Logs detailed trade history with unique **Strategy IDs** for granular performance tracking.
+- **Resilient Design**: Handles network interruptions gracefully — logs errors and continues running.
 - **Discord Notifications**: Sends trade open/close alerts via webhook.
 
 ---
@@ -64,81 +66,90 @@ The bot operates on **SPX** and currently implements the following strategy vari
 
 ## Usage
 
-### Manual Start
-Run the main script to start the bot. It will authenticate and begin the loop (monitoring & scanning).
+### Quick Start (Manual)
+
 ```bash
-python main.py
+./start.sh      # Start the bot in background
+./status.sh     # Check if running
+./stop.sh       # Stop the bot
 ```
 
-### Automated Execution (Recommended)
-Use the helper script to keep your system awake (macOS `caffeinate`) and manage the environment automatically.
+Or run directly in foreground:
 ```bash
 ./run_autotrader.sh
 ```
 
-### Market Session Guard
-The guard script manages the bot lifecycle based on tastytrade market session data. It starts the bot during trading hours and stops it outside the window.
+### Automated via Cron (Recommended)
+
+The bot can be scheduled to start and stop automatically on trading days:
+
 ```bash
-./market_session_guard.sh           # Normal operation (cron/launchd)
-./market_session_guard.sh --force-run   # Force start
-./market_session_guard.sh --force-stop  # Force stop
+# Add to crontab (crontab -e):
+
+# Start at 14:30 UK (15 mins before first entry)
+30 14 * * 1-5 /path/to/tasty0dte-ironcondor/cron_start.sh >> /path/to/cron.log 2>&1
+
+# Stop at 21:15 UK (after EOD handling)
+15 21 * * 1-5 /path/to/tasty0dte-ironcondor/cron_stop.sh >> /path/to/cron.log 2>&1
 ```
 
-### Background Service (Set & Forget)
-Install the bot as a background service (LaunchAgent) on macOS. It will run silently and persist across reboots.
-```bash
-./setup_service.sh
-```
-*To stop the service:* `launchctl unload ~/Library/LaunchAgents/com.$(whoami).tasty0dte.plist`
+| Time (UK) | Action | Days |
+|-----------|--------|------|
+| 14:30 | Start bot | Mon-Fri |
+| 21:15 | Stop bot | Mon-Fri |
+
+**Note:** The cron scripts automatically skip weekends.
+
+---
+
+## Architecture
+
+### Design Principles
+
+This bot follows a **simple, resilient architecture**:
+
+1. **One Session**: A single Tastytrade session is created at startup and reused throughout.
+2. **SDK Auto-Refresh**: The tastytrade SDK handles token refresh automatically — no manual session management needed.
+3. **Graceful Error Handling**: Network errors are logged and the bot continues running. No crashes, no aggressive restarts.
+4. **Persistent State**: Open positions are stored in `paper_trades.csv` and survive restarts.
+
+### Why This Design?
+
+Previous versions used complex "reliability" features (session guards, KeepAlive restarts, network pre-checks) that actually **caused reliability problems** by hammering the Tastytrade API during outages. The current design is simpler and more robust:
+
+- If the network drops for 5-10 minutes, the bot logs warnings and keeps trying
+- When connectivity returns, monitoring resumes automatically
+- No IP blacklisting from excessive auth requests
 
 ---
 
 ## Monitoring & Tools
 
-Since the bot runs in the background, use these included scripts to check its status:
-
 | Command | Description |
 | :--- | :--- |
-| `./monitor_logs.sh` | **Live Logs**: Watch the bot's real-time activity. Press `Ctrl+C` to exit. |
-| `python view_trades.py` | **Trade History**: Formatted table of all closed trades and their P/L. |
-| `python analyze_performance.py` | **Performance Analysis**: Win rates, P/L, and expectancy by strategy and time. |
-| `python check_metrics.py` | **Health Check**: Verify API connectivity and fetch current SPX price/IV Rank. |
-| `python monitor_live.py` | **Live P/L**: Read-only view of open positions without triggering exits. |
+| `./status.sh` | Check if bot is running |
+| `tail -f stdout.log` | Watch live bot output |
+| `tail -f trade.log` | Watch trade-specific logs |
+| `python view_trades.py` | Formatted table of all trades |
+| `python analyze_performance.py` | Win rates, P/L, and expectancy |
+| `python check_metrics.py` | Verify API connectivity |
+| `python monitor_live.py` | Read-only view of open positions |
 
-### Sample Output (`analyze_performance.py`)
-```text
-=== Strategy Performance Analysis ===
+### Log Files
 
-Strategy       Time   Trades  Win %  Net P/L ($)  Avg Win ($)  Avg Loss ($)  Exp Value ($)
-Iron Fly V2    14:37       1 100.0%        $2.20        $2.20         $0.00          $2.20
-   30 Delta    14:45      22  90.9%       $12.35        $2.13        $-5.22          $1.58
-...
-
-Overall Stats:
-Total Trades: 156
-Overall Win Rate: 82.1%
-Total P/L: $17.99
-```
-
----
-
-## Testing Scripts
-
-Verify logic without waiting for market hours:
-
-| Script | Description |
-| :--- | :--- |
-| `python test_strategy.py` | Forces a trade entry scan using current market data. |
-| `python test_monitor.py` | Simulates P/L changes to test the "Take Profit" logic. |
-| `python test_fly_legs.py` | Tests Iron Fly leg selection algorithm. |
-| `python test_entry_logic.py` | Verifies the scheduler triggers at the correct times. |
+| File | Contents |
+|------|----------|
+| `stdout.log` | Main bot output |
+| `stderr.log` | Error output |
+| `trade.log` | Trade entries and exits |
+| `cron.log` | Cron job start/stop messages |
+| `paper_trades.csv` | Trade database |
 
 ---
 
 ## Discord Notifications
 
-The bot sends trade notifications via Discord webhook (not an interactive bot). Configure the webhook URL in your `.env` file:
-
+Configure webhook URL in `.env`:
 ```bash
 DISCORD_WEBHOOK_URL_0DTE=https://discord.com/api/webhooks/...
 ```
@@ -147,17 +158,6 @@ Notifications include:
 - Trade open alerts with strikes, credit, wing width, IV Rank
 - Trade close alerts with P/L and exit reason
 - EOD expiration settlements
-
----
-
-## Paper Trading Mode
-
-The bot runs in **Paper Trading Mode** by default -- trades are logged to `paper_trades.csv` instead of being sent to the Tastytrade API. This is suitable for:
-
-- Backtesting strategies
-- Developing and testing new logic
-- Analyzing performance before going live
-- Debugging entry/exit signals
 
 ---
 
@@ -171,7 +171,6 @@ The bot runs in **Paper Trading Mode** by default -- trades are logged to `paper
 | `TASTY_CLIENT_SECRET` | Yes | OAuth application provider secret |
 | `TASTY_ACCOUNT_ID` | Yes | Tastytrade account number |
 | `DISCORD_WEBHOOK_URL_0DTE` | No | Discord webhook URL for trade notifications |
-| `TWEET_SCRIPT_PATH` | No | Path to X/Twitter posting script |
 
 ### Project Files
 
@@ -181,10 +180,54 @@ The bot runs in **Paper Trading Mode** by default -- trades are logged to `paper
 | `strategy.py` | Option chain fetching and leg selection |
 | `monitor.py` | Position monitoring and exit management |
 | `logger.py` | Trade logging to CSV |
-| `local/discord_notify.py` | Discord webhook notifications |
-| `local/x_notify.py` | X (Twitter) integration |
-| `run_autotrader.sh` | Startup wrapper with caffeinate |
-| `market_session_guard.sh` | Market hours lifecycle manager |
-| `setup_service.sh` | macOS LaunchAgent installer |
+| `start.sh` | Start bot in background |
+| `stop.sh` | Stop bot gracefully |
+| `status.sh` | Check bot status |
+| `cron_start.sh` | Cron job for automated start |
+| `cron_stop.sh` | Cron job for automated stop |
+| `run_autotrader.sh` | Direct run wrapper with caffeinate |
 
-**Important:** Never commit `.env` to version control -- it contains sensitive credentials.
+---
+
+## Troubleshooting
+
+### Bot won't start
+1. Check `.env` file has valid credentials
+2. Check `stderr.log` for errors
+3. Verify venv is set up: `source venv/bin/activate && pip install -r requirements.txt`
+
+### Network errors in logs
+This is normal during connectivity issues. The bot will:
+- Log the error
+- Wait 10-30 seconds
+- Retry automatically
+
+No action needed unless errors persist for extended periods.
+
+### Checking bot health
+```bash
+./status.sh              # Is it running?
+tail -20 stdout.log      # Recent activity
+tail -20 trade.log       # Recent trades
+```
+
+---
+
+## Paper Trading Mode
+
+The bot runs in **Paper Trading Mode** by default — trades are logged to `paper_trades.csv` instead of being sent to the Tastytrade API. This is suitable for:
+
+- Strategy validation
+- Performance tracking
+- Testing new configurations
+- Learning the system
+
+---
+
+## License
+
+MIT
+
+---
+
+**Important:** Never commit `.env` to version control — it contains sensitive credentials.
