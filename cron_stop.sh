@@ -5,20 +5,64 @@
 #
 cd "$(dirname "$0")"
 
-PID=$(pgrep -f "python.*main.py")
+PID_FILE="bot.pid"
 
-if [ -z "$PID" ]; then
+# Check PID file first
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    echo "[$(date)] Found PID file: $PID"
+else
+    echo "[$(date)] No PID file found"
+    PID=""
+fi
+
+# Also check for any orphaned processes
+ORPHAN_PIDS=$(pgrep -f "python.*main.py" 2>/dev/null | tr '\n' ' ')
+
+if [ -z "$PID" ] && [ -z "$ORPHAN_PIDS" ]; then
     echo "[$(date)] Bot not running - nothing to stop"
+    rm -f "$PID_FILE"
     exit 0
 fi
 
 echo "[$(date)] Stopping bot after market close..."
-kill "$PID" 2>/dev/null
 
-sleep 5
-if ! kill -0 "$PID" 2>/dev/null; then
+# Kill main process from PID file
+if [ -n "$PID" ]; then
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "[$(date)] Killing PID $PID and children..."
+        # Kill the process group (caffeinate + python)
+        pkill -TERM -P "$PID" 2>/dev/null  # Kill children first
+        kill -TERM "$PID" 2>/dev/null       # Then parent
+        sleep 2
+        # Force kill if still running
+        if kill -0 "$PID" 2>/dev/null; then
+            pkill -KILL -P "$PID" 2>/dev/null
+            kill -KILL "$PID" 2>/dev/null
+        fi
+    fi
+fi
+
+# Clean up any orphaned python processes
+if [ -n "$ORPHAN_PIDS" ]; then
+    echo "[$(date)] Cleaning orphaned processes: $ORPHAN_PIDS"
+    for OPID in $ORPHAN_PIDS; do
+        kill -TERM "$OPID" 2>/dev/null
+    done
+    sleep 2
+    for OPID in $ORPHAN_PIDS; do
+        kill -KILL "$OPID" 2>/dev/null
+    done
+fi
+
+# Clean up PID file
+rm -f "$PID_FILE"
+
+# Verify
+sleep 1
+REMAINING=$(pgrep -f "python.*main.py" 2>/dev/null)
+if [ -z "$REMAINING" ]; then
     echo "[$(date)] ✅ Bot stopped cleanly"
 else
-    kill -9 "$PID" 2>/dev/null
-    echo "[$(date)] ✅ Bot force-stopped"
+    echo "[$(date)] ⚠️ Some processes may still be running: $REMAINING"
 fi
