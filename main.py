@@ -49,8 +49,9 @@ logger = logging.getLogger("0dte-trader")
 load_dotenv()
 
 # === STRATEGY CONFIGS ===
+# Note: IC-20D-1500 removed (2026-02-11) - 88% win rate but negative P/L over 34 trades
 STRATEGY_CONFIGS = [
-    {'name': "20 Delta", 'code': "IC-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25},
+    {'name': "20 Delta", 'code': "IC-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(14, 45), time(15, 30)]},
     {'name': "30 Delta", 'code': "IC-30D", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
     {'name': "Iron Fly V1", 'code': "IF-V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
     {'name': "Iron Fly V2", 'code': "IF-V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
