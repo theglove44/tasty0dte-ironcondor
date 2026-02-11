@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.instruments import NestedOptionChain, Option
+from tastytrade.dxfeed import Summary
 from tastytrade.utils import get_tasty_monthly
 import pandas as pd
 import logging
@@ -22,6 +23,87 @@ async def _unwrap_awaitable(x, max_depth: int = 5):
 
 def get_0dte_expiration_date():
     return date.today()
+
+
+async def get_overnight_gap(session: Session, timeout_s: int = 5) -> dict | None:
+    """
+    Fetch SPX overnight gap data using Summary event.
+    
+    Returns dict with:
+        - prev_close: Previous day's close price
+        - day_open: Current day's open price  
+        - gap_pct: Overnight gap as percentage
+        - gap_classification: 'large_up', 'small_up', 'flat', 'down'
+    """
+    try:
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Summary, ["SPX"])
+            start_time = datetime.now()
+            async for event in streamer.listen(Summary):
+                if (datetime.now() - start_time).seconds > timeout_s:
+                    logger.warning("Timeout fetching SPX Summary")
+                    break
+                events = event if isinstance(event, list) else [event]
+                for e in events:
+                    if isinstance(e, Summary) and e.event_symbol == "SPX":
+                        prev_close = e.prev_day_close_price
+                        day_open = e.day_open_price
+                        
+                        if prev_close and day_open and prev_close > 0:
+                            gap_pct = ((day_open - prev_close) / prev_close) * 100
+                            
+                            # Classify the gap
+                            if gap_pct > 0.5:
+                                classification = 'large_up'
+                            elif gap_pct < -0.5:
+                                classification = 'large_down'  
+                            elif -0.2 <= gap_pct <= 0.2:
+                                classification = 'flat'
+                            elif gap_pct > 0.2:
+                                classification = 'small_up'
+                            else:
+                                classification = 'small_down'
+                            
+                            return {
+                                'prev_close': float(prev_close),
+                                'day_open': float(day_open),
+                                'gap_pct': gap_pct,
+                                'gap_classification': classification
+                            }
+    except Exception as e:
+        logger.error(f"Error fetching overnight gap: {type(e).__name__}: {e}")
+    
+    return None
+
+
+def should_trade_overnight_filter(gap_data: dict | None) -> tuple[bool, str]:
+    """
+    Apply overnight gap filter logic.
+    
+    Returns (should_trade, reason)
+    
+    Rules:
+        - Gap > +0.5% (large up) → TRADE
+        - Gap -0.2% to +0.2% (flat) → TRADE
+        - Gap +0.2% to +0.5% (small up) → SKIP
+        - Gap < 0% (any down) → SKIP
+    """
+    if gap_data is None:
+        return True, "No gap data available, trading anyway"
+    
+    classification = gap_data['gap_classification']
+    gap_pct = gap_data['gap_pct']
+    
+    if classification == 'large_up':
+        return True, f"Large UP gap ({gap_pct:+.2f}%) - expecting chop/flat day"
+    elif classification == 'flat':
+        return True, f"Flat overnight ({gap_pct:+.2f}%) - consistent performer"
+    elif classification == 'small_up':
+        return False, f"Small UP grind ({gap_pct:+.2f}%) - skip (underperforms)"
+    elif classification in ('small_down', 'large_down'):
+        return False, f"DOWN gap ({gap_pct:+.2f}%) - skip (no research data)"
+    else:
+        return True, f"Unknown classification, trading anyway"
 
 
 from tastytrade.instruments import get_option_chain, OptionType

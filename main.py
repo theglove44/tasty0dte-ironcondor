@@ -57,7 +57,13 @@ STRATEGY_CONFIGS = [
     {'name': "Iron Fly V2", 'code': "IF-V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
     {'name': "Iron Fly V3", 'code': "IF-V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
     {'name': "Iron Fly V4", 'code': "IF-V4", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
+    # Overnight Gap Filtered Strategy (2026-02-11)
+    # Trades only on large UP (>0.5%) or flat (±0.2%) gaps, skips small UP and DOWN days
+    {'name': "Gap Filter 20D", 'code': "GF-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0), time(15, 30)], 'overnight_filter': True},
 ]
+
+# Overnight gap cache (reset daily)
+_overnight_gap_cache = {'date': None, 'data': None, 'should_trade': None, 'reason': None}
 
 
 def _is_trigger_time_allowed(allowed_times, trigger_time):
@@ -98,9 +104,18 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         target_delta = strat['target_delta']
         profit_target_pct = strat['profit_target_pct']
         allowed_times = strat.get('allowed_times')
+        uses_overnight_filter = strat.get('overnight_filter', False)
         
         if not _is_trigger_time_allowed(allowed_times, trigger_time):
             continue
+
+        # Check overnight gap filter if enabled for this strategy
+        if uses_overnight_filter:
+            if _overnight_gap_cache['should_trade'] is False:
+                logger.info(f"[{strat_name}] Skipping - overnight filter: {_overnight_gap_cache['reason']}")
+                continue
+            elif _overnight_gap_cache['should_trade'] is True:
+                logger.info(f"[{strat_name}] Overnight filter passed: {_overnight_gap_cache['reason']}")
 
         logger.info(f"Executing: {strat_name} (Delta {target_delta})")
         
@@ -199,10 +214,15 @@ async def main():
             now_uk = datetime.now(uk_tz)
             today = now_uk.date()
             
-            # Reset traded times at midnight
+            # Reset traded times and overnight gap cache at midnight
             if last_date != today:
                 traded_today = set()
                 last_date = today
+                # Reset overnight gap cache for new day
+                _overnight_gap_cache['date'] = None
+                _overnight_gap_cache['data'] = None
+                _overnight_gap_cache['should_trade'] = None
+                _overnight_gap_cache['reason'] = None
                 logger.info(f"New trading day: {today}")
 
             # Check for entry times
@@ -214,6 +234,25 @@ async def main():
                     
                     logger.info(f"Entry time triggered: {target}")
                     traded_today.add(target)
+                    
+                    # Fetch overnight gap data if not already done today
+                    if _overnight_gap_cache['date'] != today:
+                        logger.info("Fetching overnight gap data...")
+                        try:
+                            gap_data = await strategy.get_overnight_gap(session)
+                            should_trade, reason = strategy.should_trade_overnight_filter(gap_data)
+                            _overnight_gap_cache['date'] = today
+                            _overnight_gap_cache['data'] = gap_data
+                            _overnight_gap_cache['should_trade'] = should_trade
+                            _overnight_gap_cache['reason'] = reason
+                            if gap_data:
+                                logger.info(f"Overnight gap: {gap_data['gap_pct']:+.2f}% ({gap_data['gap_classification']})")
+                            logger.info(f"Gap filter decision: {'TRADE' if should_trade else 'SKIP'} - {reason}")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch overnight gap: {e}. Filter-based strategies will trade anyway.")
+                            _overnight_gap_cache['date'] = today
+                            _overnight_gap_cache['should_trade'] = True
+                            _overnight_gap_cache['reason'] = "Gap fetch failed, trading anyway"
                     
                     try:
                         await execute_trade_cycle(session, trigger_time=target)
