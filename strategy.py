@@ -183,6 +183,30 @@ async def get_spx_spot(session: Session, timeout_s: int = 3) -> float | None:
     return None
 
 
+async def get_spx_close(session: Session, timeout_s: int = 5) -> float | None:
+    """
+    Fetch SPX closing price from Summary event.
+    Works after market close - uses day_close_price instead of live quotes.
+    """
+    try:
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Summary, ["SPX"])
+            start_time = datetime.now()
+            async for event in streamer.listen(Summary):
+                if (datetime.now() - start_time).seconds > timeout_s:
+                    logger.warning("Timeout fetching SPX close from Summary")
+                    break
+                events = event if isinstance(event, list) else [event]
+                for e in events:
+                    if isinstance(e, Summary) and e.event_symbol == "SPX":
+                        if e.day_close_price:
+                            logger.info(f"SPX close: {e.day_close_price} (type: {e.day_close_price_type})")
+                            return float(e.day_close_price)
+    except Exception as e:
+        logger.warning(f"Failed to get SPX close: {type(e).__name__}: {e}")
+    return None
+
+
 async def get_quote_snapshot(session: Session, symbols: list):
     """
     Fetches a snapshot of quotes for a list of symbols.
