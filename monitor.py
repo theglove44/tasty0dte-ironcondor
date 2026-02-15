@@ -403,13 +403,14 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
 
     logger.info("Market Closed. Checking for EOD Expirations...")
     
-    spx_price = await strategy_mod.get_spx_spot(session, timeout_s=5)
+    # Use Summary event for closing price (works after market close)
+    spx_price = await strategy_mod.get_spx_close(session, timeout_s=5)
 
     if spx_price is None:
-        logger.warning("Could not fetch SPX spot price. Cannot process EOD expirations.")
+        logger.warning("Could not fetch SPX closing price. Cannot process EOD expirations.")
         return
 
-    logger.info(f"SPX Spot Price for Expiration: {spx_price}")
+    logger.info(f"SPX Closing Price for Expiration: {spx_price}")
     
     _ensure_text_columns(df)
     trades_expired = 0
