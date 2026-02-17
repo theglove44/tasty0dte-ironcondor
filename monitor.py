@@ -287,6 +287,10 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
         
         status_lines.append(f"MARKET: SPX {spx_price:.2f} {spx_change_str}")
         status_lines.append("-" * 60)
+        
+        # Cache SPX price for EOD settlement fallback
+        if spx_price > 0:
+            strategy_mod.save_spx_price(float(spx_price))
 
     # Calculate P/L for each trade
 

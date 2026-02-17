@@ -162,15 +162,17 @@ def filter_for_0dte(chain: dict):
 from tastytrade.dxfeed import Greeks, Quote
 
 
-async def get_spx_spot(session: Session, timeout_s: int = 3) -> float | None:
-    """Fetch current SPX mid-price. Returns None on failure."""
-    try:
+async def _fetch_spx_spot_once(session: Session, timeout_s: int = 5) -> float | None:
+    """Single attempt to fetch SPX spot price."""
+    import asyncio
+    
+    async def _inner():
         async with DXLinkStreamer(session) as streamer:
             await streamer.subscribe(Quote, ["SPX"])
             start_time = datetime.now()
             async for event in streamer.listen(Quote):
                 if (datetime.now() - start_time).seconds > timeout_s:
-                    break
+                    return None
                 events = event if isinstance(event, list) else [event]
                 for e in events:
                     if isinstance(e, Quote) and e.event_symbol == "SPX":
@@ -178,32 +180,148 @@ async def get_spx_spot(session: Session, timeout_s: int = 3) -> float | None:
                             return float((e.bid_price + e.ask_price) / 2)
                         elif e.ask_price:
                             return float(e.ask_price)
-    except Exception as e:
-        logger.warning(f"Failed to get SPX spot: {type(e).__name__}: {e}")
+        return None
+    
+    try:
+        return await asyncio.wait_for(_inner(), timeout=timeout_s + 10)
+    except asyncio.TimeoutError:
+        return None
+
+
+async def get_spx_spot(session: Session, timeout_s: int = 5, retries: int = 2) -> float | None:
+    """Fetch current SPX mid-price with retry logic. Returns None on failure."""
+    import asyncio
+    
+    for attempt in range(1, retries + 1):
+        try:
+            result = await _fetch_spx_spot_once(session, timeout_s)
+            if result:
+                return result
+        except Exception as e:
+            error_detail = _unwrap_exception(e)
+            logger.warning(f"Failed to get SPX spot (attempt {attempt}/{retries}): {error_detail}")
+        
+        if attempt < retries:
+            await asyncio.sleep(1)
+    
     return None
 
 
-async def get_spx_close(session: Session, timeout_s: int = 5) -> float | None:
-    """
-    Fetch SPX closing price from Summary event.
-    Works after market close - uses day_close_price instead of live quotes.
-    """
+def _unwrap_exception(e: Exception) -> str:
+    """Extract meaningful error message from ExceptionGroup or nested exceptions."""
+    if hasattr(e, 'exceptions'):  # ExceptionGroup
+        msgs = []
+        for sub_e in e.exceptions:
+            msgs.append(f"{type(sub_e).__name__}: {sub_e}")
+        return f"ExceptionGroup with {len(msgs)} sub-exception(s): " + "; ".join(msgs)
+    return f"{type(e).__name__}: {e}"
+
+
+# --- SPX Price Cache for EOD Settlement ---
+import json
+import os
+
+SPX_CACHE_FILE = os.path.join(os.path.dirname(__file__), ".spx_cache.json")
+
+
+def save_spx_price(price: float, timestamp: datetime = None) -> None:
+    """Cache SPX price for EOD settlement fallback."""
+    if timestamp is None:
+        timestamp = datetime.now()
+    cache_data = {
+        "price": price,
+        "timestamp": timestamp.isoformat(),
+        "date": timestamp.strftime("%Y-%m-%d")
+    }
     try:
+        with open(SPX_CACHE_FILE, "w") as f:
+            json.dump(cache_data, f)
+        logger.debug(f"Cached SPX price: {price}")
+    except Exception as e:
+        logger.warning(f"Failed to cache SPX price: {e}")
+
+
+def get_cached_spx_price(for_date: date = None) -> float | None:
+    """Get cached SPX price if available and from correct date."""
+    if for_date is None:
+        for_date = date.today()
+    
+    try:
+        if not os.path.exists(SPX_CACHE_FILE):
+            return None
+        with open(SPX_CACHE_FILE, "r") as f:
+            cache_data = json.load(f)
+        
+        # Check if cache is from today
+        if cache_data.get("date") == for_date.strftime("%Y-%m-%d"):
+            price = cache_data.get("price")
+            logger.info(f"Using cached SPX price: {price} from {cache_data.get('timestamp')}")
+            return price
+        else:
+            logger.warning(f"Cached SPX price is from {cache_data.get('date')}, not {for_date}")
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to read SPX cache: {e}")
+        return None
+
+
+async def _fetch_spx_close_once(session: Session, timeout_s: int = 10) -> float | None:
+    """Single attempt to fetch SPX close price."""
+    import asyncio
+    
+    async def _inner():
         async with DXLinkStreamer(session) as streamer:
             await streamer.subscribe(Summary, ["SPX"])
             start_time = datetime.now()
             async for event in streamer.listen(Summary):
                 if (datetime.now() - start_time).seconds > timeout_s:
-                    logger.warning("Timeout fetching SPX close from Summary")
-                    break
+                    logger.warning("Timeout waiting for SPX Summary event")
+                    return None
                 events = event if isinstance(event, list) else [event]
                 for e in events:
                     if isinstance(e, Summary) and e.event_symbol == "SPX":
                         if e.day_close_price:
-                            logger.info(f"SPX close: {e.day_close_price} (type: {e.day_close_price_type})")
                             return float(e.day_close_price)
+        return None
+    
+    # Wrap entire operation with timeout (connection + subscription + listen)
+    try:
+        return await asyncio.wait_for(_inner(), timeout=timeout_s + 15)
+    except asyncio.TimeoutError:
+        logger.warning(f"Connection timeout after {timeout_s + 15}s")
+        return None
+
+
+async def get_spx_close(session: Session, timeout_s: int = 10, retries: int = 3) -> float | None:
+    """
+    Fetch SPX closing price with multiple fallback strategies:
+    1. Try dxFeed Summary event (day_close_price)
+    2. Fall back to cached price from market hours
+    
+    Args:
+        session: Tastytrade session
+        timeout_s: Timeout for each attempt
+        retries: Number of retry attempts
+    """
+    import asyncio
+    
+    # Strategy 1: Try dxFeed Summary (only 1 attempt since it's usually empty after hours)
+    try:
+        result = await _fetch_spx_close_once(session, timeout_s=5)
+        if result:
+            logger.info(f"SPX close from dxFeed Summary: {result}")
+            return result
     except Exception as e:
-        logger.warning(f"Failed to get SPX close: {type(e).__name__}: {e}")
+        error_detail = _unwrap_exception(e)
+        logger.warning(f"dxFeed Summary failed: {error_detail}")
+    
+    # Strategy 2: Use cached price from market hours
+    cached = get_cached_spx_price()
+    if cached:
+        logger.info(f"SPX close from cache: {cached}")
+        return cached
+    
+    logger.error("Could not get SPX close from dxFeed or cache")
     return None
 
 
