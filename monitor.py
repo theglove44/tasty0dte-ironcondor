@@ -15,6 +15,48 @@ except Exception:
     discord_notify = None
 logger = logging.getLogger("0dte-monitor")
 
+
+async def _cache_spx_price(session: Session) -> None:
+    """Fetch and cache SPX price for EOD settlement."""
+    try:
+        quotes = {}
+        summaries = {}
+        
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Quote, ["SPX"])
+            await streamer.subscribe(Summary, ["SPX"])
+            
+            # Wait for SPX data (max 5 seconds)
+            start_time = datetime.now()
+            while (datetime.now() - start_time).seconds < 5:
+                try:
+                    event = await asyncio.wait_for(streamer.queue.get(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+                    
+                events = event if isinstance(event, list) else [event]
+                for e in events:
+                    if isinstance(e, Quote):
+                        quotes[e.event_symbol] = e
+                    elif isinstance(e, Summary):
+                        summaries[e.event_symbol] = e
+                        
+                if "SPX" in quotes:
+                    break
+            
+            # Save SPX price if we have it
+            if "SPX" in quotes:
+                spx_q = quotes["SPX"]
+                bid = spx_q.bid_price if spx_q.bid_price is not None else Decimal(0)
+                ask = spx_q.ask_price if spx_q.ask_price is not None else Decimal(0)
+                if bid > 0 and ask > 0:
+                    spx_price = (bid + ask) / 2
+                    strategy_mod.save_spx_price(float(spx_price))
+                    logger.info(f"Cached SPX price: {spx_price}")
+    except Exception as e:
+        logger.warning(f"Failed to cache SPX price: {e}")
+
+
 # Track lines for console refresh
 _last_lines_count = 0
 _NUMERIC_COLS_TO_FORMAT = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
@@ -186,9 +228,16 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
         symbols.add(row['Long Put'])
         
     symbol_list = list(symbols)
+    
+    # Always monitor SPX for EOD settlement cache
+    if "SPX" not in symbols:
+        symbols.add("SPX")
+    
     if not symbol_list:
         status_lines.append(f"[{current_time}] Monitoring {len(open_trades)} trades but no symbols found.")
         refresh_console(status_lines, reset_cursor=False)
+        # Still try to cache SPX price even with no open trades
+        await _cache_spx_price(session)
         return
 
     # Collect status lines for TUI
@@ -348,7 +397,8 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             now_uk = datetime.now(uk_tz)
             
             is_time_exit = False
-            if strategy_name == "30 Delta":
+            # Time exit at 18:00 UK for 30 Delta and Iron Flies
+            if strategy_name in ["30 Delta", "Iron Fly V1", "Iron Fly V2", "Iron Fly V3", "Iron Fly V4"]:
                 # Exit at 18:00 UK
                 if now_uk.time() >= time(18, 0):
                     is_time_exit = True
