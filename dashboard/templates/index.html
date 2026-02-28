@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>0DTE Command Centre</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="top-bar">
+    <div class="logo">0DTE COMMAND CENTRE</div>
+    <div id="clock" class="clock"></div>
+  </header>
+
+  <main class="grid">
+    <!-- Row 1: Market Overview + PDT -->
+    <section class="panel panel-market"
+             hx-get="/partials/market" hx-trigger="every 10s" hx-swap="innerHTML">
+      {% include 'partials/market_overview.html' %}
+    </section>
+
+    <section class="panel panel-pdt"
+             hx-get="/partials/pdt" hx-trigger="every 60s" hx-swap="innerHTML">
+      {% include 'partials/pdt_tracker.html' %}
+    </section>
+
+    <!-- Row 2: Open Positions -->
+    <section class="panel panel-positions"
+             hx-get="/partials/positions" hx-trigger="every 10s" hx-swap="innerHTML">
+      {% include 'partials/open_positions.html' %}
+    </section>
+
+    <!-- Row 3: Today's Trades -->
+    <section class="panel panel-today"
+             hx-get="/partials/today" hx-trigger="every 30s" hx-swap="innerHTML">
+      {% include 'partials/todays_trades.html' %}
+    </section>
+
+    <!-- Row 4: Performance -->
+    <section class="panel panel-performance" id="perf-panel">
+      {% include 'partials/performance.html' %}
+    </section>
+
+    <!-- Row 5: Charts -->
+    <section class="panel panel-charts">
+      <h2>Equity Curve</h2>
+      <div class="chart-container">
+        <canvas id="equityChart"></canvas>
+      </div>
+      <h2>Daily P/L Calendar</h2>
+      <div class="chart-container">
+        <canvas id="calendarChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Row 6: Strategy Rules -->
+    <section class="panel panel-strategies">
+      {% include 'partials/strategy_rules.html' %}
+    </section>
+
+    <!-- Row 7: System Health -->
+    <section class="panel panel-system"
+             hx-get="/partials/system" hx-trigger="every 30s" hx-swap="innerHTML">
+      {% include 'partials/system_health.html' %}
+    </section>
+  </main>
+
+  <!-- Bootstrap chart data from initial load -->
+  <script>
+    window.__chartData = {
+      equity_curve: {{ perf.equity_curve | tojson }},
+      calendar: {{ perf.calendar | tojson }}
+    };
+  </script>
+  <script src="/static/js/dashboard.js"></script>
+  <script src="/static/js/charts.js"></script>
+</body>
+</html>

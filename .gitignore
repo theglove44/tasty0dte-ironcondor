@@ -40,3 +40,7 @@ stderr.log.bak*
 run_autotrader.sh.bak*
 market_session_guard.sh.bak*
 main.py.bak*
+
+# Dashboard runtime
+dashboard.log
+dashboard.pid

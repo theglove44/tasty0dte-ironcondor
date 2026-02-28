@@ -1,0 +1,39 @@
+<h2>Open Positions</h2>
+{% if positions %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Strategy</th>
+        <th>Date</th>
+        <th>Entry</th>
+        <th>Short Call</th>
+        <th>Long Call</th>
+        <th>Short Put</th>
+        <th>Long Put</th>
+        <th>Credit</th>
+        <th>Target</th>
+        <th>IV Rank</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in positions %}
+      <tr>
+        <td><span class="badge badge-{{ 'fly' if 'Fly' in p.strategy else 'condor' }}">{{ p.strategy }}</span></td>
+        <td>{{ p.date }}</td>
+        <td>{{ p.entry_time }}</td>
+        <td class="mono">{{ p.short_call }}</td>
+        <td class="mono">{{ p.long_call }}</td>
+        <td class="mono">{{ p.short_put }}</td>
+        <td class="mono">{{ p.long_put }}</td>
+        <td class="mono">${{ "%.2f" | format(p.credit) if p.credit is not none else '--' }}</td>
+        <td class="mono">${{ "%.2f" | format(p.profit_target) if p.profit_target is not none else '--' }}</td>
+        <td>{{ "%.1f" | format(p.iv_rank) if p.iv_rank is not none else '--' }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">No open positions</div>
+{% endif %}

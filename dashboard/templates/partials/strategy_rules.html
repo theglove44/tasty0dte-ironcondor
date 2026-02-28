@@ -1,0 +1,34 @@
+<h2>Strategy Rules</h2>
+<div class="strategy-grid">
+  {% for s in strategies %}
+  <div class="strategy-card">
+    <div class="strategy-header">
+      <span class="badge badge-{{ 'fly' if s.type == 'iron_fly' else 'condor' }}">
+        {{ 'Iron Fly' if s.type == 'iron_fly' else 'Iron Condor' }}
+      </span>
+      <strong>{{ s.name }}</strong>
+    </div>
+    <div class="strategy-details">
+      <div><span class="detail-label">Code:</span> {{ s.code }}</div>
+      <div><span class="detail-label">Delta:</span> {{ s.target_delta }}</div>
+      <div><span class="detail-label">Profit Target:</span> {{ (s.profit_target_pct * 100) | int }}%</div>
+      {% if s.get('wing_width') %}
+        <div><span class="detail-label">Wing Width:</span> {{ s.wing_width }}pt</div>
+      {% elif s.type == 'iron_condor' %}
+        <div><span class="detail-label">Wing Width:</span> {{ ic_wing_width }}pt</div>
+      {% endif %}
+      {% if s.allowed_times %}
+        <div><span class="detail-label">Entry Times:</span> {{ s.allowed_times | join(', ') }} UK</div>
+      {% else %}
+        <div><span class="detail-label">Entry Times:</span> Any</div>
+      {% endif %}
+      {% if s.get('overnight_filter') %}
+        <div><span class="detail-label">Gap Filter:</span> <span class="tag-active">Active</span></div>
+      {% endif %}
+      {% if s.type == 'iron_fly' %}
+        <div><span class="detail-label">Time Exit:</span> {{ time_exit }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
