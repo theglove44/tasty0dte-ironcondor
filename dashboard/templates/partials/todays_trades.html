@@ -1,0 +1,42 @@
+<h2>Today's Trades</h2>
+{% if today.trades %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Strategy</th>
+        <th>Entry</th>
+        <th>Exit</th>
+        <th>Credit</th>
+        <th>P/L</th>
+        <th>Status</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in today.trades %}
+      <tr>
+        <td><span class="badge badge-{{ 'fly' if 'Fly' in t.strategy else 'condor' }}">{{ t.strategy }}</span></td>
+        <td>{{ t.entry_time }}</td>
+        <td>{{ t.exit_time }}</td>
+        <td class="mono">${{ "%.2f" | format(t.credit) if t.credit is not none else '--' }}</td>
+        <td class="mono {% if t.exit_pl is not none %}{{ 'pl-pos' if t.exit_pl > 0 else 'pl-neg' }}{% endif %}">
+          {% if t.exit_pl is not none %}
+            {{ "+" if t.exit_pl > 0 else "" }}${{ "%.2f" | format(t.exit_pl) }}
+          {% else %}
+            --
+          {% endif %}
+        </td>
+        <td><span class="status-tag status-{{ t.status | lower }}">{{ t.status }}</span></td>
+        <td class="notes-cell">{{ t.notes }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="daily-total {% if today.daily_pl >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+  Daily P/L: {{ "+" if today.daily_pl >= 0 else "" }}${{ "%.2f" | format(today.daily_pl) }}
+</div>
+{% else %}
+<div class="empty-state">No closed trades today</div>
+{% endif %}

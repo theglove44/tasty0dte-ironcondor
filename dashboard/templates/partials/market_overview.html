@@ -1,0 +1,39 @@
+<h2>Market Overview</h2>
+<div class="market-grid">
+  <div class="metric-card">
+    <div class="metric-label">SPX</div>
+    <div class="metric-value {% if spx.stale %}stale{% endif %}">
+      {% if spx.price is not none %}
+        {{ "%.2f" | format(spx.price) }}
+      {% else %}
+        --
+      {% endif %}
+    </div>
+    {% if spx.stale %}
+      <div class="metric-sub stale-text">STALE</div>
+    {% elif spx.timestamp %}
+      <div class="metric-sub">{{ spx.timestamp }}</div>
+    {% endif %}
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Session</div>
+    <div class="metric-value session-{{ market.status | lower | replace(' ', '-') }}">
+      {{ market.status }}
+    </div>
+    <div class="metric-sub">{{ market.detail }}</div>
+    {% if market.countdown %}
+      <div class="metric-sub countdown">{{ market.countdown }}</div>
+    {% endif %}
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">Bot</div>
+    <div class="metric-value {% if bot.running %}status-running{% else %}status-stopped{% endif %}">
+      {% if bot.running %}RUNNING{% else %}STOPPED{% endif %}
+    </div>
+    {% if bot.pid %}
+      <div class="metric-sub">PID {{ bot.pid }}</div>
+    {% endif %}
+  </div>
+</div>

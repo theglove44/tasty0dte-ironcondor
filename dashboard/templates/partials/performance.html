@@ -1,0 +1,83 @@
+<h2>Performance</h2>
+<div class="period-buttons">
+  {% for p in ['day', 'week', 'month', 'year', 'all'] %}
+    <button class="btn-period {% if perf.period == p %}active{% endif %}"
+            hx-get="/partials/performance?period={{ p }}"
+            hx-target="#perf-panel"
+            hx-swap="innerHTML"
+            onclick="updateCharts('{{ p }}')">
+      {{ p | capitalize }}
+    </button>
+  {% endfor %}
+</div>
+
+<!-- Summary cards -->
+<div class="perf-cards">
+  <div class="metric-card">
+    <div class="metric-label">Total Trades</div>
+    <div class="metric-value">{{ perf.overall.total_trades }}</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Win Rate</div>
+    <div class="metric-value">{{ perf.overall.win_rate }}%</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Total P/L</div>
+    <div class="metric-value {% if perf.overall.total_pl >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+      {{ "+" if perf.overall.total_pl >= 0 else "" }}${{ "%.2f" | format(perf.overall.total_pl) }}
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Avg Credit</div>
+    <div class="metric-value">${{ "%.2f" | format(perf.overall.avg_credit) }}</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Avg P/L</div>
+    <div class="metric-value {% if perf.overall.avg_pl >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+      {{ "+" if perf.overall.avg_pl >= 0 else "" }}${{ "%.2f" | format(perf.overall.avg_pl) }}
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Expectancy</div>
+    <div class="metric-value {% if perf.overall.expectancy >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+      {{ "+" if perf.overall.expectancy >= 0 else "" }}${{ "%.2f" | format(perf.overall.expectancy) }}
+    </div>
+  </div>
+</div>
+
+<!-- Per-strategy breakdown -->
+{% if perf.by_strategy %}
+<h3>By Strategy</h3>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Strategy</th>
+        <th>Trades</th>
+        <th>Win Rate</th>
+        <th>Total P/L</th>
+        <th>Avg Win</th>
+        <th>Avg Loss</th>
+        <th>Expectancy</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in perf.by_strategy %}
+      <tr>
+        <td><span class="badge badge-{{ 'fly' if 'Fly' in s.strategy else 'condor' }}">{{ s.strategy }}</span></td>
+        <td>{{ s.total_trades }}</td>
+        <td>{{ s.win_rate }}%</td>
+        <td class="mono {% if s.total_pl >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+          {{ "+" if s.total_pl >= 0 else "" }}${{ "%.2f" | format(s.total_pl) }}
+        </td>
+        <td class="mono pl-pos">${{ "%.2f" | format(s.avg_win) }}</td>
+        <td class="mono pl-neg">${{ "%.2f" | format(s.avg_loss) }}</td>
+        <td class="mono {% if s.expectancy >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+          {{ "+" if s.expectancy >= 0 else "" }}${{ "%.2f" | format(s.expectancy) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

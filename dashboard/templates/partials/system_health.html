@@ -1,0 +1,42 @@
+<h2>System Health</h2>
+<div class="system-grid">
+  <!-- Bot Status -->
+  <div class="system-status">
+    <span class="indicator {% if system.bot.running %}indicator-on{% else %}indicator-off{% endif %}"></span>
+    Bot: {% if system.bot.running %}Running (PID {{ system.bot.pid }}){% else %}Stopped{% endif %}
+  </div>
+
+  <!-- Cron Log -->
+  <div class="log-section">
+    <h3>Cron Log</h3>
+    <div class="log-scroll">
+      {% if system.cron_entries %}
+        {% for e in system.cron_entries | reverse %}
+        <div class="log-line">
+          <span class="log-ts">{{ e.timestamp }}</span>
+          <span class="log-msg">{{ e.message }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">No cron entries</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Recent Errors -->
+  <div class="log-section">
+    <h3>Recent Errors / Warnings</h3>
+    <div class="log-scroll">
+      {% if system.errors %}
+        {% for e in system.errors | reverse %}
+        <div class="log-line log-error">
+          <span class="log-src">[{{ e.source }}]</span>
+          <span class="log-msg">{{ e.line }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">No recent errors</div>
+      {% endif %}
+    </div>
+  </div>
+</div>

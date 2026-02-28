@@ -1,0 +1,472 @@
+/* 0DTE Command Centre — Dark Trading Terminal Theme */
+
+:root {
+  --bg-primary: #0a0e17;
+  --bg-panel: #111827;
+  --bg-card: #1a2236;
+  --bg-hover: #1e293b;
+  --border: #1e293b;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --green: #22c55e;
+  --green-dim: #166534;
+  --red: #ef4444;
+  --red-dim: #991b1b;
+  --blue: #3b82f6;
+  --amber: #f59e0b;
+  --purple: #a855f7;
+  --cyan: #06b6d4;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* Top bar */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--cyan);
+}
+
+.clock {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* Grid layout */
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Panels */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.panel h2 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.panel h3 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin: 16px 0 8px;
+}
+
+/* Market overview grid */
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* Metric cards */
+.metric-card {
+  background: var(--bg-card);
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+}
+
+.metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.metric-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Session status colors */
+.session-open { color: var(--green); }
+.session-pre-market { color: var(--amber); }
+.session-closed { color: var(--text-muted); }
+
+/* Bot status */
+.status-running { color: var(--green); }
+.status-stopped { color: var(--red); }
+
+/* Staleness */
+.stale { color: var(--text-muted) !important; opacity: 0.6; }
+.stale-text { color: var(--amber); font-weight: 600; }
+
+.countdown {
+  font-family: var(--font-mono);
+  color: var(--cyan);
+}
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* P/L colors */
+.pl-pos { color: var(--green); }
+.pl-neg { color: var(--red); }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-condor {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--blue);
+}
+
+.badge-fly {
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--purple);
+}
+
+/* Status tags */
+.status-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-closed {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--green);
+}
+
+.status-expired {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--red);
+}
+
+.status-open {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--cyan);
+}
+
+/* Notes cell */
+.notes-cell {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Daily total */
+.daily-total {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 12px 0 0;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Period buttons */
+.period-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.btn-period {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-period:hover {
+  border-color: var(--cyan);
+  color: var(--text-primary);
+}
+
+.btn-period.active {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+/* Performance cards grid */
+.perf-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* Charts */
+.chart-container {
+  position: relative;
+  height: 280px;
+  margin: 12px 0 24px;
+}
+
+/* Strategy rules grid */
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.strategy-card {
+  background: var(--bg-card);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.strategy-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.strategy-details {
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.detail-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.tag-active {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* System health */
+.system-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.indicator-on {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+.indicator-off {
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+}
+
+.log-section {
+  background: var(--bg-card);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.log-scroll {
+  max-height: 250px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.log-line {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+}
+
+.log-ts {
+  color: var(--text-muted);
+  margin-right: 8px;
+}
+
+.log-src {
+  color: var(--amber);
+  margin-right: 4px;
+}
+
+.log-error .log-msg {
+  color: var(--red);
+}
+
+/* PDT Tracker */
+.pdt-display {
+  text-align: center;
+  padding: 8px;
+}
+
+.pdt-counter {
+  font-family: var(--font-mono);
+  font-size: 48px;
+  font-weight: 700;
+}
+
+.pdt-number { font-size: inherit; }
+.pdt-slash { color: var(--text-muted); margin: 0 4px; }
+.pdt-limit { color: var(--text-muted); }
+
+.pdt-safe .pdt-number { color: var(--green); }
+.pdt-warning .pdt-number { color: var(--amber); }
+.pdt-danger .pdt-number { color: var(--red); }
+
+.pdt-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.pdt-breakdown {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.pdt-day {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .grid { padding: 8px; gap: 8px; }
+  .panel { padding: 12px; }
+  .market-grid { grid-template-columns: 1fr; }
+  .perf-cards { grid-template-columns: repeat(2, 1fr); }
+  .strategy-grid { grid-template-columns: 1fr; }
+  .metric-value { font-size: 18px; }
+}

@@ -1,0 +1,16 @@
+<h2>PDT Tracker</h2>
+<div class="pdt-display">
+  <div class="pdt-counter {% if pdt.count >= pdt.limit %}pdt-danger{% elif pdt.count >= pdt.limit - 1 %}pdt-warning{% else %}pdt-safe{% endif %}">
+    <span class="pdt-number">{{ pdt.count }}</span>
+    <span class="pdt-slash">/</span>
+    <span class="pdt-limit">{{ pdt.limit }}</span>
+  </div>
+  <div class="pdt-label">Day trades (rolling 5 business days)</div>
+  {% if pdt.trades %}
+  <div class="pdt-breakdown">
+    {% for t in pdt.trades %}
+      <span class="pdt-day">{{ t.date }}: {{ t.count }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
