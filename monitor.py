@@ -397,11 +397,17 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             now_uk = datetime.now(uk_tz)
             
             is_time_exit = False
+            time_exit_label = ""
             # Time exit at 18:00 UK for 30 Delta and Iron Flies
             if strategy_name in ["30 Delta", "Iron Fly V1", "Iron Fly V2", "Iron Fly V3", "Iron Fly V4"]:
-                # Exit at 18:00 UK
                 if now_uk.time() >= time(18, 0):
                     is_time_exit = True
+                    time_exit_label = "18:00"
+            # Time exit at 20:55 UK for Dynamic 0DTE
+            elif strategy_name == "Dynamic 0DTE":
+                if now_uk.time() >= time(20, 55):
+                    is_time_exit = True
+                    time_exit_label = "20:55"
             
             status_lines.append(f"Trade {index} [{description}]: Credit={initial_credit:.2f}, Current Debit={debit_to_close:.2f}, P/L={current_profit:.2f}, Target={profit_target:.2f}{iv_rank_str}")
 
@@ -416,11 +422,11 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                 if read_only:
                     status_lines.append(f"   >>> TIME EXIT REACHED (Read-Only)")
                 else:
-                    logger.info(f"Time Exit (18:00 UK) Reached for Trade {index} ({strategy_name})! Closing...")
+                    logger.info(f"Time Exit ({time_exit_label} UK) Reached for Trade {index} ({strategy_name})! Closing...")
                     _ensure_text_columns(df, ['Notes'])
-                    _append_note(df, index, "Time Exit 18:00")
+                    _append_note(df, index, f"Time Exit {time_exit_label}")
 
-                    await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason="Time Exit (18:00 UK)")
+                    await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason=f"Time Exit ({time_exit_label} UK)")
                     trades_closed += 1
                 
         except Exception as e:

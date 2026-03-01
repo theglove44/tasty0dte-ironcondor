@@ -60,6 +60,13 @@ STRATEGY_CONFIGS = [
     # Overnight Gap Filtered Strategy (2026-02-11)
     # Trades only on large UP (>0.5%) or flat (±0.2%) gaps, skips small UP and DOWN days
     {'name': "Gap Filter 20D", 'code': "GF-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0), time(15, 30)], 'overnight_filter': True},
+    # Dynamic 0DTE: observes 30-min move, selects IC (flat/up) or IF (down)
+    {'name': "Dynamic 0DTE", 'code': "DY-0D", 'type': 'dynamic_0dte',
+     'allowed_times': [time(15, 0)],
+     'profit_target_pct': 0.20,
+     'move_threshold': -0.1,
+     'condor_delta': 0.20, 'condor_wing_width': 20,
+     'fly_delta': 0.50, 'fly_wing_width': 10},
 ]
 
 # Overnight gap cache (reset daily)
@@ -101,7 +108,7 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
     for strat in STRATEGY_CONFIGS:
         strat_name = strat['name']
         strat_type = strat['type']
-        target_delta = strat['target_delta']
+        target_delta = strat.get('target_delta', 0)
         profit_target_pct = strat['profit_target_pct']
         allowed_times = strat.get('allowed_times')
         uses_overnight_filter = strat.get('overnight_filter', False)
@@ -121,12 +128,34 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         
         # Find legs
         legs = None
+        notes_extra = ""
         if strat_type == 'iron_condor':
             legs = await strategy.find_iron_condor_legs(session, exp, target_delta=target_delta)
         elif strat_type == 'iron_fly':
             wing_width = strat.get('wing_width', 10)
             legs = await strategy.find_iron_fly_legs(session, exp, target_delta=target_delta, wing_width=wing_width)
-        
+        elif strat_type == 'dynamic_0dte':
+            move_data = await strategy.get_spx_30min_move(session)
+            if not move_data:
+                logger.warning(f"[{strat_name}] Could not fetch 30-min move. Skipping.")
+                continue
+
+            change_pct = move_data['change_pct']
+            threshold = strat.get('move_threshold', -0.1)
+
+            if change_pct > threshold:
+                selected = "IC"
+                legs = await strategy.find_iron_condor_legs(
+                    session, exp, target_delta=strat['condor_delta'])
+            else:
+                selected = "IF"
+                legs = await strategy.find_iron_fly_legs(
+                    session, exp, target_delta=strat['fly_delta'],
+                    wing_width=strat['fly_wing_width'])
+
+            notes_extra = f"30min: {change_pct:+.2f}% → {selected}"
+            logger.info(f"[{strat_name}] SPX 30-min move: {change_pct:+.2f}% → Selected: {selected}")
+
         if not legs:
             logger.warning(f"[{strat_name}] Could not find suitable legs.")
             continue
@@ -146,8 +175,10 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         strategy_id = _build_strategy_id(strat_name, trigger_time)
         
         # Log trade
-        trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank, 
-                                     strategy_name=strat_name, strategy_id=strategy_id)
+        notes = f"0DTE {strat_name} | {notes_extra}" if notes_extra else None
+        trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank,
+                                     strategy_name=strat_name, strategy_id=strategy_id,
+                                     notes=notes)
         logger.info(f"[{strat_name}] Trade logged. Credit: ${credit:.2f}, IV Rank: {iv_rank}")
 
         # Discord notification

@@ -112,7 +112,7 @@ def migrate_csv(old_headers):
         writer.writerows(new_rows)
     logger.info("Migration complete.")
 
-def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id=""):
+def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id="", notes=None):
     init_log_file()
 
     with open(LOG_FILE, mode='a', newline='') as file:
@@ -148,6 +148,6 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             "OPEN",
             "",
             "",
-            f"0DTE {strategy_name}",
+            notes or f"0DTE {strategy_name}",
             f"{ivr_val:.2f}"
         ])
