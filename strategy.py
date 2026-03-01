@@ -106,6 +106,39 @@ def should_trade_overnight_filter(gap_data: dict | None) -> tuple[bool, str]:
         return True, f"Unknown classification, trading anyway"
 
 
+async def get_spx_30min_move(session: Session, timeout_s: int = 5) -> dict | None:
+    """
+    Calculate SPX % change from day open to current price.
+    Used by dynamic 0DTE strategy to select IC vs IF.
+
+    Returns: dict with open_price, current_price, change_pct
+             or None on failure.
+    """
+    try:
+        gap_data = await get_overnight_gap(session, timeout_s=timeout_s)
+        if not gap_data or not gap_data.get('day_open'):
+            logger.warning("Could not get day open price for 30-min move")
+            return None
+
+        day_open = gap_data['day_open']
+
+        current_price = await get_spx_spot(session, timeout_s=timeout_s)
+        if not current_price:
+            logger.warning("Could not get current SPX price for 30-min move")
+            return None
+
+        change_pct = ((current_price - day_open) / day_open) * 100
+
+        return {
+            'open_price': float(day_open),
+            'current_price': float(current_price),
+            'change_pct': change_pct,
+        }
+    except Exception as e:
+        logger.error(f"Error calculating 30-min move: {type(e).__name__}: {e}")
+        return None
+
+
 from tastytrade.instruments import get_option_chain, OptionType
 from tastytrade.metrics import get_market_metrics
 
