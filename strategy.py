@@ -124,8 +124,14 @@ async def get_spx_30min_move(session: Session, timeout_s: int = 5) -> dict | Non
 
         current_price = await get_spx_spot(session, timeout_s=timeout_s)
         if not current_price:
-            logger.warning("Could not get current SPX price for 30-min move")
-            return None
+            # Fallback to cached price if live fetch fails
+            cached_price = get_cached_spx_price()
+            if cached_price:
+                logger.info(f"Using cached SPX price: {cached_price}")
+                current_price = cached_price
+            else:
+                logger.warning("Could not get current SPX price for 30-min move")
+                return None
 
         change_pct = ((current_price - day_open) / day_open) * 100
 

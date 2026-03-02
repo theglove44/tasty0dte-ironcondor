@@ -18,11 +18,11 @@ Chart.defaults.font.family = "'SF Mono', 'Fira Code', monospace";
 Chart.defaults.font.size = 11;
 
 function renderCharts(data) {
-  renderEquityCurve(data.equity_curve);
-  renderCalendar(data.calendar);
+  renderEquityCurve(data.equity_curve, data.strategy || '');
+  renderCalendar(data.calendar, data.strategy || '');
 }
 
-function renderEquityCurve(eq) {
+function renderEquityCurve(eq, strategy) {
   var ctx = document.getElementById('equityChart');
   if (!ctx) return;
 
@@ -66,6 +66,13 @@ function renderEquityCurve(eq) {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
+        title: {
+          display: !!strategy,
+          text: strategy ? 'Filtered: ' + strategy : '',
+          color: chartColors.cyan,
+          font: { size: 13, weight: '600' },
+          padding: { bottom: 8 }
+        },
         tooltip: {
           callbacks: {
             label: function (ctx) {
@@ -91,7 +98,7 @@ function renderEquityCurve(eq) {
   });
 }
 
-function renderCalendar(cal) {
+function renderCalendar(cal, strategy) {
   var ctx = document.getElementById('calendarChart');
   if (!ctx) return;
 

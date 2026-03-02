@@ -105,6 +105,11 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
 
     iv_rank = await strategy.fetch_spx_iv_rank(session)
     
+    # Cache SPX price for fallback (used by Dynamic 0DTE strategy)
+    spx_spot = await strategy.get_spx_spot(session, timeout_s=5)
+    if spx_spot:
+        strategy.save_spx_price(spx_spot)
+    
     for strat in STRATEGY_CONFIGS:
         strat_name = strat['name']
         strat_type = strat['type']

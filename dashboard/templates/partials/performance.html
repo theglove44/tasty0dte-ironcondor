@@ -47,7 +47,14 @@
 
 <!-- Per-strategy breakdown -->
 {% if perf.by_strategy %}
-<h3>By Strategy</h3>
+<h3>By Strategy
+  {% if perf.strategy %}
+    <span class="strategy-filter-label">
+      Showing: {{ perf.strategy }}
+      <button class="btn-clear-filter" onclick="selectStrategy('')" title="Show all">&times;</button>
+    </span>
+  {% endif %}
+</h3>
 <div class="table-wrap">
   <table>
     <thead>
@@ -63,7 +70,8 @@
     </thead>
     <tbody>
       {% for s in perf.by_strategy %}
-      <tr>
+      <tr class="strategy-row {% if perf.strategy == s.strategy %}strategy-selected{% endif %}"
+          onclick="selectStrategy('{{ s.strategy }}')" title="Click to filter charts">
         <td><span class="badge badge-{{ 'fly' if 'Fly' in s.strategy else 'condor' }}">{{ s.strategy }}</span></td>
         <td>{{ s.total_trades }}</td>
         <td>{{ s.win_rate }}%</td>

@@ -122,8 +122,12 @@ def get_todays_closed_trades() -> dict:
     return {"trades": trades, "daily_pl": round(daily_pl, 2)}
 
 
-def get_performance_metrics(period: str = "all") -> dict:
+def get_performance_metrics(period: str = "all", strategy: str = "") -> dict:
     """Compute performance metrics for a given period.
+
+    Args:
+        period: Time filter (day/week/month/year/all).
+        strategy: If non-empty, equity_curve and calendar are filtered to this strategy name.
 
     Returns dict with keys: overall, by_strategy, equity_curve, calendar.
     """
@@ -164,8 +168,15 @@ def get_performance_metrics(period: str = "all") -> dict:
         m["strategy"] = strat.strip() if isinstance(strat, str) else str(strat)
         by_strategy.append(m)
 
+    # Filter for charts if a specific strategy is selected
+    chart_data = closed
+    if strategy:
+        chart_data = closed[closed["Strategy"].str.strip() == strategy]
+        if chart_data.empty:
+            chart_data = closed  # fallback to all if no match
+
     # Equity curve (cumulative P/L by date)
-    daily = closed.groupby(closed["_date"].dt.date)["Exit P/L"].sum().sort_index()
+    daily = chart_data.groupby(chart_data["_date"].dt.date)["Exit P/L"].sum().sort_index()
     cum = daily.cumsum()
     equity_curve = {
         "labels": [d.strftime("%Y-%m-%d") for d in cum.index],
@@ -184,6 +195,7 @@ def get_performance_metrics(period: str = "all") -> dict:
         "equity_curve": equity_curve,
         "calendar": calendar,
         "period": period,
+        "strategy": strategy,
     }
 
 
@@ -225,6 +237,7 @@ def _empty_perf() -> dict:
         "equity_curve": {"labels": [], "values": []},
         "calendar": {"labels": [], "values": []},
         "period": "all",
+        "strategy": "",
     }
 
 

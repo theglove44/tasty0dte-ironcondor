@@ -113,10 +113,12 @@ def partial_pdt():
 @app.route("/api/chart-data")
 def api_chart_data():
     period = request.args.get("period", "all")
-    perf = get_performance_metrics(period)
+    strategy = request.args.get("strategy", "")
+    perf = get_performance_metrics(period, strategy=strategy)
     return jsonify({
         "equity_curve": perf["equity_curve"],
         "calendar": perf["calendar"],
+        "strategy": perf["strategy"],
     })
 
 
