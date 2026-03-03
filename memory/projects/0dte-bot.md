@@ -21,6 +21,13 @@ _(Track win rate, P/L by strategy ID after live/paper runs)_
 ### Active Strategies
 - **GF-20D**: Overnight gap filter strategy — added for filtering entries
 
+## Process Lessons
+
+### Documentation/Test Drift (2026-03-03)
+- **Problem**: README and dashboard strategy config drifted from `main.py`; EOD unit tests mocked `get_spx_spot` while production code uses `get_spx_close`.
+- **Fix**: Updated README strategy matrix, updated dashboard strategy config, and corrected EOD tests to mock `get_spx_close`.
+- **Prevention**: Treat `main.py` `STRATEGY_CONFIGS` as source-of-truth and verify docs/tests whenever strategy timing/exit logic changes.
+
 ## Patterns & Conventions
 
 - Bot is cron-based: start/stop at scheduled times

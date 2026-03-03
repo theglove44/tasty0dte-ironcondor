@@ -6,7 +6,8 @@ import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv(".env")
+# Load .env from current working directory/project root
+load_dotenv()
 
 from tastytrade import Session
 import strategy

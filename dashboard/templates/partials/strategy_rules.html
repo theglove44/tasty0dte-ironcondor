@@ -3,29 +3,47 @@
   {% for s in strategies %}
   <div class="strategy-card">
     <div class="strategy-header">
-      <span class="badge badge-{{ 'fly' if s.type == 'iron_fly' else 'condor' }}">
-        {{ 'Iron Fly' if s.type == 'iron_fly' else 'Iron Condor' }}
+      <span class="badge badge-{% if s.type == 'iron_fly' %}fly{% elif s.type == 'dynamic_0dte' %}dynamic{% else %}condor{% endif %}">
+        {% if s.type == 'iron_fly' %}
+          Iron Fly
+        {% elif s.type == 'dynamic_0dte' %}
+          Dynamic
+        {% else %}
+          Iron Condor
+        {% endif %}
       </span>
       <strong>{{ s.name }}</strong>
     </div>
     <div class="strategy-details">
       <div><span class="detail-label">Code:</span> {{ s.code }}</div>
-      <div><span class="detail-label">Delta:</span> {{ s.target_delta }}</div>
+      {% if s.get('target_delta') is not none %}
+        <div><span class="detail-label">Delta:</span> {{ s.target_delta }}</div>
+      {% endif %}
       <div><span class="detail-label">Profit Target:</span> {{ (s.profit_target_pct * 100) | int }}%</div>
+
       {% if s.get('wing_width') %}
         <div><span class="detail-label">Wing Width:</span> {{ s.wing_width }}pt</div>
       {% elif s.type == 'iron_condor' %}
         <div><span class="detail-label">Wing Width:</span> {{ ic_wing_width }}pt</div>
       {% endif %}
+
       {% if s.allowed_times %}
         <div><span class="detail-label">Entry Times:</span> {{ s.allowed_times | join(', ') }} UK</div>
       {% else %}
         <div><span class="detail-label">Entry Times:</span> Any</div>
       {% endif %}
+
       {% if s.get('overnight_filter') %}
         <div><span class="detail-label">Gap Filter:</span> <span class="tag-active">Active</span></div>
       {% endif %}
-      {% if s.type == 'iron_fly' %}
+
+      {% if s.type == 'dynamic_0dte' %}
+        <div><span class="detail-label">Selection:</span> IC if 30-min move &gt; {{ s.move_threshold }}%, else IF</div>
+        <div><span class="detail-label">IC Config:</span> Δ{{ s.condor_delta }}, {{ s.condor_wing_width }}pt wings</div>
+        <div><span class="detail-label">IF Config:</span> Δ{{ s.fly_delta }}, {{ s.fly_wing_width }}pt wings</div>
+      {% endif %}
+
+      {% if s.type == 'iron_fly' or s.type == 'dynamic_0dte' or s.name == '30 Delta' %}
         <div><span class="detail-label">Time Exit:</span> {{ time_exit }}</div>
       {% endif %}
     </div>

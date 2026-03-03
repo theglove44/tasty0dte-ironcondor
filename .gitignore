@@ -22,6 +22,11 @@ stdout.log
 stderr.log
 guard_stdout.log
 guard_stderr.log
+cron.log
+
+# Runtime state
+bot.pid
+.spx_cache.json
 
 # Guard/trader runtime files
 .trader.pid

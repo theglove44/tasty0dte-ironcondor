@@ -125,7 +125,7 @@ class TestEODExpiration(unittest.TestCase):
     def test_eod_otm_full_profit(self, mock_strategy, mock_closed):
         """SPX settles between short strikes -> full credit profit."""
         self._make_csv(short_call='6100', long_call='6120', short_put='6000', long_put='5980', credit=4.50)
-        mock_strategy.get_spx_spot = AsyncMock(return_value=6050.0)
+        mock_strategy.get_spx_close = AsyncMock(return_value=6050.0)
 
         mock_session = MagicMock()
         asyncio.run(check_eod_expiration(mock_session, self.csv_path))
@@ -140,7 +140,7 @@ class TestEODExpiration(unittest.TestCase):
         """SPX settles above short call -> partial loss on call side."""
         self._make_csv(short_call='6100', long_call='6120', short_put='6000', long_put='5980', credit=4.50)
         # SPX at 6110 -> call debit = max(0, 6110-6100) - max(0, 6110-6120) = 10 - 0 = 10
-        mock_strategy.get_spx_spot = AsyncMock(return_value=6110.0)
+        mock_strategy.get_spx_close = AsyncMock(return_value=6110.0)
 
         mock_session = MagicMock()
         asyncio.run(check_eod_expiration(mock_session, self.csv_path))
@@ -156,7 +156,7 @@ class TestEODExpiration(unittest.TestCase):
         """SPX settles below short put -> partial loss on put side."""
         self._make_csv(short_call='6100', long_call='6120', short_put='6000', long_put='5980', credit=4.50)
         # SPX at 5990 -> put debit = max(0, 6000-5990) - max(0, 5980-5990) = 10 - 0 = 10
-        mock_strategy.get_spx_spot = AsyncMock(return_value=5990.0)
+        mock_strategy.get_spx_close = AsyncMock(return_value=5990.0)
 
         mock_session = MagicMock()
         asyncio.run(check_eod_expiration(mock_session, self.csv_path))

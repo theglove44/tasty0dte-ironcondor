@@ -18,8 +18,10 @@ STRATEGY_CONFIGS = [
         'code': "IC-30D",
         'type': 'iron_condor',
         'target_delta': 0.30,
+        # In main.py this strategy has no allowed_times override,
+        # so it runs at all scheduler trigger times.
+        'allowed_times': ["14:45", "15:00", "15:30"],
         'profit_target_pct': 0.25,
-        'allowed_times': [],
     },
     {
         'name': "Iron Fly V1",
@@ -66,10 +68,23 @@ STRATEGY_CONFIGS = [
         'allowed_times': ["15:00", "15:30"],
         'overnight_filter': True,
     },
+    {
+        'name': "Dynamic 0DTE",
+        'code': "DY-0D",
+        'type': 'dynamic_0dte',
+        'target_delta': "adaptive",
+        'profit_target_pct': 0.20,
+        'allowed_times': ["15:00"],
+        'move_threshold': -0.1,
+        'condor_delta': 0.20,
+        'condor_wing_width': 20,
+        'fly_delta': 0.50,
+        'fly_wing_width': 10,
+    },
 ]
 
-# Time exit rule (applies to iron flies)
-TIME_EXIT = "18:00 UK"
+# Time exit rules from monitor.py
+TIME_EXIT = "18:00 UK (30 Delta + Iron Fly), 20:55 UK (Dynamic 0DTE)"
 
 # Wing width default for iron condors
 IC_WING_WIDTH = 20
