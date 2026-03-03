@@ -198,14 +198,18 @@ def filter_for_0dte(chain: dict):
     logger.warning(f"No 0DTE expiration found for {today}")
     return None
 
-from tastytrade.dxfeed import Greeks, Quote
+from tastytrade.dxfeed import Greeks, Quote, Trade
 
 
 async def _fetch_spx_spot_once(session: Session, timeout_s: int = 5) -> float | None:
-    """Single attempt to fetch SPX spot price."""
+    """Single attempt to fetch SPX spot price.
+
+    Primary source: Quote mark (mid/ask/bid)
+    Fallback source: Trade last price
+    """
     import asyncio
-    
-    async def _inner():
+
+    async def _from_quote() -> float | None:
         async with DXLinkStreamer(session) as streamer:
             await streamer.subscribe(Quote, ["SPX"])
             start_time = datetime.now()
@@ -222,11 +226,40 @@ async def _fetch_spx_spot_once(session: Session, timeout_s: int = 5) -> float | 
                         elif e.bid_price:
                             return float(e.bid_price)
         return None
-    
-    try:
-        return await asyncio.wait_for(_inner(), timeout=timeout_s + 10)
-    except asyncio.TimeoutError:
+
+    async def _from_trade() -> float | None:
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Trade, ["SPX"])
+            start_time = datetime.now()
+            async for event in streamer.listen(Trade):
+                if (datetime.now() - start_time).seconds > timeout_s:
+                    return None
+                events = event if isinstance(event, list) else [event]
+                for e in events:
+                    if isinstance(e, Trade) and e.event_symbol == "SPX" and e.price:
+                        return float(e.price)
         return None
+
+    quote_price = None
+    try:
+        quote_price = await asyncio.wait_for(_from_quote(), timeout=timeout_s + 1)
+    except asyncio.TimeoutError:
+        quote_price = None
+
+    if quote_price is not None:
+        return quote_price
+
+    trade_price = None
+    try:
+        trade_price = await asyncio.wait_for(_from_trade(), timeout=timeout_s + 1)
+    except asyncio.TimeoutError:
+        trade_price = None
+
+    if trade_price is not None:
+        logger.info(f"Using SPX Trade fallback price: {trade_price}")
+        return trade_price
+
+    return None
 
 
 async def get_spx_spot(session: Session, timeout_s: int = 5, retries: int = 2) -> float | None:

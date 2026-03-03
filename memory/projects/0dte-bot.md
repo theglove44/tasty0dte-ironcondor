@@ -29,9 +29,14 @@ _(Track win rate, P/L by strategy ID after live/paper runs)_
 - **Prevention**: Treat `main.py` `STRATEGY_CONFIGS` as source-of-truth and verify docs/tests whenever strategy timing/exit logic changes.
 
 ### Dynamic SPX Spot Fallback (2026-03-03)
-- **Problem**: Dynamic strategy could skip if SPX quote had only bid or only ask; logic handled ask-only but not bid-only.
-- **Fix**: Updated `strategy.get_spx_spot()` to use bid-only fallback when ask is missing.
-- **Prevention**: Keep quote parsing tolerant to partial market data (mid → ask-only → bid-only) for decision-critical signals.
+- **Problem**: Dynamic strategy skipped because SPX `Quote` stream returned no usable events in-session.
+- **Fix**: Updated `strategy.get_spx_spot()` fallback chain to use `Trade` price when `Quote` mark is unavailable (mid → ask-only → bid-only → trade).
+- **Prevention**: For SPX decision signals, support multiple data event types and avoid single-feed dependence.
+
+### Spot Fetch Timeout Trap (2026-03-03)
+- **Problem**: Quote wait wrapper timed out and returned early before attempting trade fallback.
+- **Fix**: Split timeout handling per source so trade fallback always runs after quote timeout.
+- **Prevention**: Apply timeout/fallback per stage, not around the whole multi-stage fetch flow.
 
 ## Patterns & Conventions
 
