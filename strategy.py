@@ -219,6 +219,8 @@ async def _fetch_spx_spot_once(session: Session, timeout_s: int = 5) -> float | 
                             return float((e.bid_price + e.ask_price) / 2)
                         elif e.ask_price:
                             return float(e.ask_price)
+                        elif e.bid_price:
+                            return float(e.bid_price)
         return None
     
     try:

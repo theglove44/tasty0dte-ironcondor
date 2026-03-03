@@ -34,6 +34,7 @@ Entry scheduler triggers at **14:45, 15:00, 15:30 UK**.
 At 15:00 UK, bot checks SPX move from day open:
 - if 30-min move `> -0.1%` → choose IC config (20Δ, 20pt wings)
 - else → choose IF config (50Δ ATM, 10pt wings)
+- current SPX price is from dxFeed `Quote` using mid (bid/ask), with ask-only and bid-only fallback if one side is missing
 
 ### Gap Filter logic (GF-20D)
 Uses overnight SPX gap class:

@@ -28,6 +28,11 @@ _(Track win rate, P/L by strategy ID after live/paper runs)_
 - **Fix**: Updated README strategy matrix, updated dashboard strategy config, and corrected EOD tests to mock `get_spx_close`.
 - **Prevention**: Treat `main.py` `STRATEGY_CONFIGS` as source-of-truth and verify docs/tests whenever strategy timing/exit logic changes.
 
+### Dynamic SPX Spot Fallback (2026-03-03)
+- **Problem**: Dynamic strategy could skip if SPX quote had only bid or only ask; logic handled ask-only but not bid-only.
+- **Fix**: Updated `strategy.get_spx_spot()` to use bid-only fallback when ask is missing.
+- **Prevention**: Keep quote parsing tolerant to partial market data (mid → ask-only → bid-only) for decision-critical signals.
+
 ## Patterns & Conventions
 
 - Bot is cron-based: start/stop at scheduled times
