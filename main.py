@@ -52,7 +52,7 @@ load_dotenv()
 # Note: IC-20D-1500 removed (2026-02-11) - 88% win rate but negative P/L over 34 trades
 STRATEGY_CONFIGS = [
     {'name': "20 Delta", 'code': "IC-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(14, 45), time(15, 30)]},
-    {'name': "30 Delta", 'code': "IC-30D", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25, 'allowed_times': [time(14, 45), time(15, 0), time(15, 30)]},
+    {'name': "30 Delta", 'code': "IC-30D", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
     {'name': "Iron Fly V1", 'code': "IF-V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
     {'name': "Iron Fly V2", 'code': "IF-V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
     {'name': "Iron Fly V3", 'code': "IF-V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
@@ -62,8 +62,7 @@ STRATEGY_CONFIGS = [
     {'name': "Gap Filter 20D", 'code': "GF-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0), time(15, 30)], 'overnight_filter': True},
     # Dynamic 0DTE: observes 30-min move, selects IC (flat/up) or IF (down)
     {'name': "Dynamic 0DTE", 'code': "DY-0D", 'type': 'dynamic_0dte',
-     # Temporary verification window added at 16:00 UK (2026-03-03)
-     'allowed_times': [time(15, 0), time(16, 0)],
+     'allowed_times': [time(15, 0)],
      'profit_target_pct': 0.20,
      'move_threshold': -0.1,
      'condor_delta': 0.20, 'condor_wing_width': 20,
@@ -237,8 +236,7 @@ async def main():
         return
 
     uk_tz = pytz.timezone('Europe/London')
-    # Temporary 16:00 trigger added for Dynamic 0DTE verification (2026-03-03)
-    target_times = [time(14, 45), time(15, 0), time(15, 30), time(16, 0)]
+    target_times = [time(14, 45), time(15, 0), time(15, 30)]
     
     logger.info(f"Entry times: {[t.strftime('%H:%M') for t in target_times]} UK")
     logger.info("Entering main loop. Will run until stopped.")

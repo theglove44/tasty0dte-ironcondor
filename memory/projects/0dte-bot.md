@@ -38,6 +38,11 @@ _(Track win rate, P/L by strategy ID after live/paper runs)_
 - **Fix**: Split timeout handling per source so trade fallback always runs after quote timeout.
 - **Prevention**: Apply timeout/fallback per stage, not around the whole multi-stage fetch flow.
 
+### Temporary Trigger Cleanup (2026-03-03)
+- **Problem**: Added a one-off 16:00 Dynamic trigger for live verification.
+- **Fix**: Reverted scheduler back to default trigger times and restored Dynamic allowed time to 15:00 only.
+- **Prevention**: Use temporary verification windows only with explicit same-day rollback and record purge.
+
 ## Patterns & Conventions
 
 - Bot is cron-based: start/stop at scheduled times
