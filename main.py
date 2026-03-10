@@ -118,6 +118,11 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
     for strat in STRATEGY_CONFIGS:
         strat_name = strat['name']
         strat_type = strat['type']
+
+        # Premium Popper runs as its own background task, not through trade cycle
+        if strat_type == 'premium_popper':
+            continue
+
         target_delta = strat.get('target_delta', 0)
         profit_target_pct = strat['profit_target_pct']
         allowed_times = strat.get('allowed_times')
