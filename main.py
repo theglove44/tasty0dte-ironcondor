@@ -20,6 +20,7 @@ from tastytrade import Session
 import strategy
 import monitor
 import logger as trade_logger
+import premium_popper
 
 try:
     from local import discord_notify
@@ -51,22 +52,26 @@ load_dotenv()
 # === STRATEGY CONFIGS ===
 # Note: IC-20D-1500 removed (2026-02-11) - 88% win rate but negative P/L over 34 trades
 STRATEGY_CONFIGS = [
-    {'name': "20 Delta", 'code': "IC-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(14, 45), time(15, 30)]},
+    {'name': "20 Delta", 'code': "IC-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(13, 45), time(14, 30)]},
     {'name': "30 Delta", 'code': "IC-30D", 'type': 'iron_condor', 'target_delta': 0.30, 'profit_target_pct': 0.25},
-    {'name': "Iron Fly V1", 'code': "IF-V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
-    {'name': "Iron Fly V2", 'code': "IF-V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 0)]},
-    {'name': "Iron Fly V3", 'code': "IF-V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
-    {'name': "Iron Fly V4", 'code': "IF-V4", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(15, 30)]},
+    {'name': "Iron Fly V1", 'code': "IF-V1", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(14, 0)]},
+    {'name': "Iron Fly V2", 'code': "IF-V2", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(14, 0)]},
+    {'name': "Iron Fly V3", 'code': "IF-V3", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.10, 'wing_width': 10, 'allowed_times': [time(14, 30)]},
+    {'name': "Iron Fly V4", 'code': "IF-V4", 'type': 'iron_fly', 'target_delta': 0.50, 'profit_target_pct': 0.20, 'wing_width': 10, 'allowed_times': [time(14, 30)]},
     # Overnight Gap Filtered Strategy (2026-02-11)
     # Trades only on large UP (>0.5%) or flat (±0.2%) gaps, skips small UP and DOWN days
-    {'name': "Gap Filter 20D", 'code': "GF-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0), time(15, 30)], 'overnight_filter': True},
+    {'name': "Gap Filter 20D", 'code': "GF-20D", 'type': 'iron_condor', 'target_delta': 0.20, 'profit_target_pct': 0.25, 'allowed_times': [time(14, 0), time(14, 30)], 'overnight_filter': True},
     # Dynamic 0DTE: observes 30-min move, selects IC (flat/up) or IF (down)
     {'name': "Dynamic 0DTE", 'code': "DY-0D", 'type': 'dynamic_0dte',
-     'allowed_times': [time(15, 0)],
+     'allowed_times': [time(14, 0)],
      'profit_target_pct': 0.20,
      'move_threshold': -0.1,
      'condor_delta': 0.20, 'condor_wing_width': 20,
      'fly_delta': 0.50, 'fly_wing_width': 10},
+    # Premium Popper ORB20: breakout credit spread (runs as background task)
+    {'name': "Premium Popper", 'code': "PP-ORB", 'type': 'premium_popper',
+     'allowed_times': [time(13, 45)],
+     'profit_target_pct': 0.50},
 ]
 
 # Overnight gap cache (reset daily)
@@ -236,13 +241,14 @@ async def main():
         return
 
     uk_tz = pytz.timezone('Europe/London')
-    target_times = [time(14, 45), time(15, 0), time(15, 30)]
+    target_times = [time(13, 45), time(14, 0), time(14, 30)]
     
     logger.info(f"Entry times: {[t.strftime('%H:%M') for t in target_times]} UK")
     logger.info("Entering main loop. Will run until stopped.")
 
     # Track which times we've traded today (reset at midnight)
     traded_today = set()
+    popper_started_today = False
     last_date = None
 
     while True:
@@ -253,6 +259,7 @@ async def main():
             # Reset traded times and overnight gap cache at midnight
             if last_date != today:
                 traded_today = set()
+                popper_started_today = False
                 last_date = today
                 # Reset overnight gap cache for new day
                 _overnight_gap_cache['date'] = None
@@ -295,6 +302,12 @@ async def main():
                     except Exception as e:
                         logger.error(f"Trade cycle failed: {type(e).__name__}: {e}")
                         # Don't crash - just log and continue
+
+                    # Launch Premium Popper at first trigger (13:45 UK ≈ market open)
+                    if target == time(13, 45) and not popper_started_today:
+                        popper_started_today = True
+                        logger.info("Launching Premium Popper ORB20 background task...")
+                        asyncio.create_task(premium_popper.run_premium_popper(session))
                     
                     # Sleep to avoid re-triggering in same minute
                     await asyncio.sleep(60)

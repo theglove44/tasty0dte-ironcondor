@@ -59,7 +59,7 @@ async def _cache_spx_price(session: Session) -> None:
 
 # Track lines for console refresh
 _last_lines_count = 0
-_NUMERIC_COLS_TO_FORMAT = ['Credit Collected', 'Buying Power', 'Profit Target', 'Exit P/L', 'IV Rank']
+_NUMERIC_COLS_TO_FORMAT = ['Credit Collected', 'Buying Power', 'Profit Target', 'Stop Loss', 'Exit P/L', 'IV Rank']
 _TEXT_COLS_FOR_UPDATES = ['Exit Time', 'Notes']
 
 
@@ -200,8 +200,8 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             df.at[idx, 'Status'] = 'EXPIRED'
             df.at[idx, 'Exit Time'] = '00:00:00'
             credit = float(df.at[idx, 'Credit Collected'])
-            call_width = abs((_parse_strike_float(df.at[idx, 'Short Call']) or 0) - (_parse_strike_float(df.at[idx, 'Long Call']) or 0))
-            put_width = abs((_parse_strike_float(df.at[idx, 'Short Put']) or 0) - (_parse_strike_float(df.at[idx, 'Long Put']) or 0))
+            call_width = 0 if df.at[idx, 'Short Call'] == 'NONE' else abs((_parse_strike_float(df.at[idx, 'Short Call']) or 0) - (_parse_strike_float(df.at[idx, 'Long Call']) or 0))
+            put_width = 0 if df.at[idx, 'Short Put'] == 'NONE' else abs((_parse_strike_float(df.at[idx, 'Short Put']) or 0) - (_parse_strike_float(df.at[idx, 'Long Put']) or 0))
             max_width = max(call_width, put_width)
             df.at[idx, 'Exit P/L'] = round(credit - max_width, 2)
             _append_note(df, idx, "Stale 0DTE: auto-expired (prior day)")
@@ -222,10 +222,10 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
     # Collect all unique symbols from open trades
     symbols = set()
     for index, row in open_trades.iterrows():
-        symbols.add(row['Short Call'])
-        symbols.add(row['Long Call'])
-        symbols.add(row['Short Put'])
-        symbols.add(row['Long Put'])
+        for col in ['Short Call', 'Long Call', 'Short Put', 'Long Put']:
+            sym = row[col]
+            if sym and sym != 'NONE':
+                symbols.add(sym)
         
     symbol_list = list(symbols)
     
@@ -348,12 +348,16 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
     
     for index, row in open_trades.iterrows():
         try:
-            sc_mark = _mark_for_symbol(quotes, row['Short Call'])
-            lc_mark = _mark_for_symbol(quotes, row['Long Call'])
-            sp_mark = _mark_for_symbol(quotes, row['Short Put'])
-            lp_mark = _mark_for_symbol(quotes, row['Long Put'])
+            has_call_side = row['Short Call'] != 'NONE'
+            has_put_side = row['Short Put'] != 'NONE'
 
-            if sc_mark is None or lc_mark is None or sp_mark is None or lp_mark is None:
+            sc_mark = _mark_for_symbol(quotes, row['Short Call']) if has_call_side else 0
+            lc_mark = _mark_for_symbol(quotes, row['Long Call']) if has_call_side else 0
+            sp_mark = _mark_for_symbol(quotes, row['Short Put']) if has_put_side else 0
+            lp_mark = _mark_for_symbol(quotes, row['Long Put']) if has_put_side else 0
+
+            if (has_call_side and (sc_mark is None or lc_mark is None)) or \
+               (has_put_side and (sp_mark is None or lp_mark is None)):
                 status_lines.append(f"Trade {index}: Waiting for data...")
                 continue
 
@@ -363,8 +367,15 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             lp_mark = float(lp_mark)
 
             # Calculate Debit to Close (Buying back shorts, Selling longs)
-            # Debit = (Shorts Buyback) - (Longs Sell)
-            debit_to_close = (sc_mark + sp_mark) - (lc_mark + lp_mark)
+            if not has_call_side:
+                # Put credit spread only
+                debit_to_close = sp_mark - lp_mark
+            elif not has_put_side:
+                # Call credit spread only
+                debit_to_close = sc_mark - lc_mark
+            else:
+                # 4-leg (existing IC/IF)
+                debit_to_close = (sc_mark + sp_mark) - (lc_mark + lp_mark)
             
             initial_credit = row['Credit Collected']
             profit_target = row['Profit Target'] 
@@ -378,7 +389,12 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             sp_str = _parse_strike_token(row['Short Put'])
             lp_str = _parse_strike_token(row['Long Put'])
             
-            description = f"SPX IC {sc_str}/{lc_str}C / {sp_str}/{lp_str}P"
+            if not has_call_side:
+                description = f"SPX PCS {sp_str}/{lp_str}P"
+            elif not has_put_side:
+                description = f"SPX CCS {sc_str}/{lc_str}C"
+            else:
+                description = f"SPX IC {sc_str}/{lc_str}C / {sp_str}/{lp_str}P"
             
             # Change color based on P/L? For now just text.
             iv_rank_str = ""
@@ -398,18 +414,28 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             
             is_time_exit = False
             time_exit_label = ""
-            # Time exit at 18:00 UK for 30 Delta and Iron Flies
+            # Time exit at 17:00 UK for 30 Delta and Iron Flies
             if strategy_name in ["30 Delta", "Iron Fly V1", "Iron Fly V2", "Iron Fly V3", "Iron Fly V4"]:
-                if now_uk.time() >= time(18, 0):
+                if now_uk.time() >= time(17, 0):
                     is_time_exit = True
-                    time_exit_label = "18:00"
-            # Time exit at 20:55 UK for Dynamic 0DTE
+                    time_exit_label = "17:00"
+            # Time exit at 19:55 UK for Dynamic 0DTE
             elif strategy_name == "Dynamic 0DTE":
-                if now_uk.time() >= time(20, 55):
+                if now_uk.time() >= time(19, 55):
                     is_time_exit = True
-                    time_exit_label = "20:55"
+                    time_exit_label = "19:55"
+            # Time exit at 18:50 UK for Premium Popper (2:50pm ET during DST gap)
+            elif strategy_name == "Premium Popper":
+                if now_uk.time() >= time(18, 50):
+                    is_time_exit = True
+                    time_exit_label = "18:50"
             
             status_lines.append(f"Trade {index} [{description}]: Credit={initial_credit:.2f}, Current Debit={debit_to_close:.2f}, P/L={current_profit:.2f}, Target={profit_target:.2f}{iv_rank_str}")
+
+            # Stop loss check
+            stop_loss_val = row.get('Stop Loss', None)
+            has_stop_loss = (stop_loss_val is not None and not pd.isna(stop_loss_val)
+                            and str(stop_loss_val).strip() != '' and float(stop_loss_val) > 0)
 
             if debit_to_close <= target_debit:
                 if read_only:
@@ -417,6 +443,15 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                 else:
                     logger.info(f"Profit Target Reached for Trade {index}! Closing...")
                     await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason="Profit Target")
+                    trades_closed += 1
+            elif has_stop_loss and debit_to_close >= float(stop_loss_val):
+                if read_only:
+                    status_lines.append(f"   >>> STOP LOSS REACHED (Read-Only)")
+                else:
+                    logger.info(f"Stop Loss Reached for Trade {index}! Debit={debit_to_close:.2f} >= Stop={float(stop_loss_val):.2f}. Closing...")
+                    _ensure_text_columns(df, ['Notes'])
+                    _append_note(df, index, f"Stop Loss hit at debit {debit_to_close:.2f}")
+                    await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason="Stop Loss")
                     trades_closed += 1
             elif is_time_exit:
                 if read_only:
@@ -444,7 +479,7 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
 async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.csv"):
     """
     Checks for End-Of-Day expiration.
-    If time is past market close (21:00 UK), expire OPEN trades.
+    If time is past market close (20:00 UK), expire OPEN trades.
     """
     if not is_market_closed():
         return
@@ -476,22 +511,28 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
     trades_expired = 0
     for index, row in open_trades.iterrows():
         try:
-            short_call_strike = _parse_strike_float(row['Short Call'])
-            long_call_strike = _parse_strike_float(row['Long Call'])
-            short_put_strike = _parse_strike_float(row['Short Put'])
-            long_put_strike = _parse_strike_float(row['Long Put'])
-            
-            if not all([short_call_strike, long_call_strike, short_put_strike, long_put_strike]):
-                logger.error(f"Could not parse strikes for trade {index}. Skipping.")
+            has_call_side = row['Short Call'] != 'NONE'
+            has_put_side = row['Short Put'] != 'NONE'
+
+            short_call_strike = _parse_strike_float(row['Short Call']) if has_call_side else None
+            long_call_strike = _parse_strike_float(row['Long Call']) if has_call_side else None
+            short_put_strike = _parse_strike_float(row['Short Put']) if has_put_side else None
+            long_put_strike = _parse_strike_float(row['Long Put']) if has_put_side else None
+
+            if has_call_side and not all([short_call_strike, long_call_strike]):
+                logger.error(f"Could not parse call strikes for trade {index}. Skipping.")
+                continue
+            if has_put_side and not all([short_put_strike, long_put_strike]):
+                logger.error(f"Could not parse put strikes for trade {index}. Skipping.")
+                continue
+            if not has_call_side and not has_put_side:
+                logger.error(f"Trade {index} has no active legs. Skipping.")
                 continue
 
-            # Calculate Expiration Value (Debit)
-            # Debit = Call_Debit + Put_Debit
-            # Call_Debit = Max(0, Spot - SC) - Max(0, Spot - LC)
-            # Put_Debit = Max(0, SP - Spot) - Max(0, LP - Spot)
-            
-            call_debit = max(0, spx_price - short_call_strike) - max(0, spx_price - long_call_strike)
-            put_debit = max(0, short_put_strike - spx_price) - max(0, long_put_strike - spx_price)
+            call_debit = 0 if not has_call_side else (
+                max(0, spx_price - short_call_strike) - max(0, spx_price - long_call_strike))
+            put_debit = 0 if not has_put_side else (
+                max(0, short_put_strike - spx_price) - max(0, long_put_strike - spx_price))
             
             total_debit = call_debit + put_debit
             
@@ -541,8 +582,9 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
 
 def is_market_closed():
     """
-    Returns True if current UK time is >= 21:00 (Market Close).
+    Returns True if current UK time is >= 20:00 (Market Close).
+    US DST active, UK still GMT — market closes 1hr earlier.
     """
     uk_tz = pytz.timezone('Europe/London')
     now_uk = datetime.now(uk_tz)
-    return now_uk.hour >= 21
+    return now_uk.hour >= 20

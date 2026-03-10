@@ -9,8 +9,8 @@ logger = logging.getLogger("logger")
 
 HEADER = [
     "Date", "Entry Time", "Symbol", "Strategy", "StrategyId",
-    "Short Call", "Long Call", "Short Put", "Long Put", 
-    "Credit Collected", "Buying Power", "Profit Target", 
+    "Short Call", "Long Call", "Short Put", "Long Put",
+    "Credit Collected", "Buying Power", "Profit Target", "Stop Loss",
     "Status", "Exit Time", "Exit P/L", "Notes", "IV Rank"
 ]
 
@@ -36,9 +36,10 @@ def init_log_file():
         missing_strategy = "Strategy" not in headers
         missing_iv = "IV Rank" not in headers
         missing_id = "StrategyId" not in headers
-        
-        if missing_strategy or missing_iv or missing_id:
-            logger.info(f"Migrating CSV. Missing Strat: {missing_strategy}, IV: {missing_iv}, ID: {missing_id}")
+        missing_stop_loss = "Stop Loss" not in headers
+
+        if missing_strategy or missing_iv or missing_id or missing_stop_loss:
+            logger.info(f"Migrating CSV. Missing Strat: {missing_strategy}, IV: {missing_iv}, ID: {missing_id}, StopLoss: {missing_stop_loss}")
             migrate_csv(headers)
 
 def migrate_csv(old_headers):
@@ -112,7 +113,7 @@ def migrate_csv(old_headers):
         writer.writerows(new_rows)
     logger.info("Migration complete.")
 
-def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id="", notes=None):
+def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id="", notes=None, stop_loss=""):
     init_log_file()
 
     with open(LOG_FILE, mode='a', newline='') as file:
@@ -132,6 +133,7 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
              ivr_val *= 100.0
              
         writer = csv.writer(file)
+        stop_loss_str = f"{float(stop_loss):.2f}" if stop_loss else ""
         writer.writerow([
             datetime.now().date(),
             datetime.now().strftime("%H:%M:%S"),
@@ -145,6 +147,7 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             f"{float(credit):.2f}",
             f"{float(buying_power):.2f}",
             f"{float(profit_target):.2f}",
+            stop_loss_str,
             "OPEN",
             "",
             "",
