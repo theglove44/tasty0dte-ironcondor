@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Cron job: Stop bot after market close
-# Runs at 21:15 UK (after EOD expiration at 21:00)
+# Runs at 20:15 UK (after EOD expiration at 20:00) — US DST active
 #
 cd "$(dirname "$0")"
 

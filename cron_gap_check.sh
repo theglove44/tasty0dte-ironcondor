@@ -1,5 +1,5 @@
 #!/bin/bash
-# Gap Checker Cron - Run at 2:45pm to validate overnight gap filter
+# Gap Checker Cron - Run at 1:45pm to validate overnight gap filter — US DST active
 
 cd ~/Projects/tasty0dte-ironcondor
 

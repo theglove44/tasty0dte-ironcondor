@@ -52,6 +52,61 @@ def index():
 
 
 # ---------------------------------------------------------------------------
+# Page-level routes (sidebar navigation via HTMX)
+# ---------------------------------------------------------------------------
+
+@app.route("/pages/dashboard")
+def page_dashboard():
+    return render_template(
+        "pages/dashboard.html",
+        market=get_market_session(),
+        spx=get_spx_data(),
+        bot=get_bot_status(),
+        positions=get_open_positions(),
+        today=get_todays_closed_trades(),
+        pdt=get_pdt_status(),
+    )
+
+
+@app.route("/pages/performance")
+def page_performance():
+    period = request.args.get("period", "all")
+    return render_template(
+        "pages/performance.html",
+        perf=get_performance_metrics(period),
+    )
+
+
+@app.route("/pages/charts")
+def page_charts():
+    period = request.args.get("period", "all")
+    strategy = request.args.get("strategy", "")
+    return render_template(
+        "pages/charts.html",
+        perf=get_performance_metrics(period, strategy=strategy),
+        period=period,
+    )
+
+
+@app.route("/pages/strategies")
+def page_strategies():
+    return render_template(
+        "pages/strategies.html",
+        strategies=STRATEGY_CONFIGS,
+        time_exit=TIME_EXIT,
+        ic_wing_width=IC_WING_WIDTH,
+    )
+
+
+@app.route("/pages/system")
+def page_system():
+    return render_template(
+        "pages/system.html",
+        system=_system_context(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # HTMX partials
 # ---------------------------------------------------------------------------
 

@@ -23,6 +23,14 @@
   setInterval(updateClock, 1000);
 })();
 
+// Sidebar navigation
+function setActivePage(el) {
+  document.querySelectorAll('.nav-item').forEach(function (item) {
+    item.classList.remove('active');
+  });
+  el.classList.add('active');
+}
+
 // Strategy filter state
 window.__selectedStrategy = '';
 window.__currentPeriod = 'all';

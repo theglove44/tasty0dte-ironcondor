@@ -1,0 +1,25 @@
+<!-- Dashboard: Live monitoring view -->
+<div class="page-grid">
+  <!-- Row 1: Market Overview + PDT -->
+  <section class="panel panel-market"
+           hx-get="/partials/market" hx-trigger="every 10s" hx-swap="innerHTML">
+    {% include 'partials/market_overview.html' %}
+  </section>
+
+  <section class="panel panel-pdt"
+           hx-get="/partials/pdt" hx-trigger="every 60s" hx-swap="innerHTML">
+    {% include 'partials/pdt_tracker.html' %}
+  </section>
+
+  <!-- Row 2: Open Positions -->
+  <section class="panel panel-positions"
+           hx-get="/partials/positions" hx-trigger="every 10s" hx-swap="innerHTML">
+    {% include 'partials/open_positions.html' %}
+  </section>
+
+  <!-- Row 3: Today's Trades -->
+  <section class="panel panel-today"
+           hx-get="/partials/today" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include 'partials/todays_trades.html' %}
+  </section>
+</div>

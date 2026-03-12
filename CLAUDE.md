@@ -37,7 +37,7 @@
 
 ## Trading Rules
 
-- Only trade during market hours (14:30-21:00 UK)
+- Only trade during market hours (13:30-20:00 UK while US DST active, revert to 14:30-21:00 when UK clocks change)
 - Max 3 day trades per 5 days (PDT rule)
 - Use paper_trades.csv for all tracking
 - Credit-only strategies (no debit spreads)

@@ -14,66 +14,40 @@
     <div id="clock" class="clock"></div>
   </header>
 
-  <main class="grid">
-    <!-- Row 1: Market Overview + PDT -->
-    <section class="panel panel-market"
-             hx-get="/partials/market" hx-trigger="every 10s" hx-swap="innerHTML">
-      {% include 'partials/market_overview.html' %}
-    </section>
+  <div class="app-layout">
+    <nav class="sidebar" id="sidebar">
+      <a href="#" class="nav-item active" data-page="dashboard"
+         hx-get="/pages/dashboard" hx-target="#main-content" hx-swap="innerHTML"
+         hx-on::after-request="setActivePage(this)">
+        <span class="nav-icon">&#9632;</span> Dashboard
+      </a>
+      <a href="#" class="nav-item" data-page="performance"
+         hx-get="/pages/performance?period=all" hx-target="#main-content" hx-swap="innerHTML"
+         hx-on::after-request="setActivePage(this)">
+        <span class="nav-icon">&#9650;</span> Performance
+      </a>
+      <a href="#" class="nav-item" data-page="charts"
+         hx-get="/pages/charts?period=all" hx-target="#main-content" hx-swap="innerHTML"
+         hx-on::after-request="setActivePage(this)">
+        <span class="nav-icon">&#9644;</span> Charts
+      </a>
+      <a href="#" class="nav-item" data-page="strategies"
+         hx-get="/pages/strategies" hx-target="#main-content" hx-swap="innerHTML"
+         hx-on::after-request="setActivePage(this)">
+        <span class="nav-icon">&#9881;</span> Strategy Rules
+      </a>
+      <a href="#" class="nav-item" data-page="system"
+         hx-get="/pages/system" hx-target="#main-content" hx-swap="innerHTML"
+         hx-on::after-request="setActivePage(this)">
+        <span class="nav-icon">&#9881;</span> System
+      </a>
+    </nav>
 
-    <section class="panel panel-pdt"
-             hx-get="/partials/pdt" hx-trigger="every 60s" hx-swap="innerHTML">
-      {% include 'partials/pdt_tracker.html' %}
-    </section>
+    <main class="main-content" id="main-content">
+      {% include 'pages/dashboard.html' %}
+    </main>
+  </div>
 
-    <!-- Row 2: Open Positions -->
-    <section class="panel panel-positions"
-             hx-get="/partials/positions" hx-trigger="every 10s" hx-swap="innerHTML">
-      {% include 'partials/open_positions.html' %}
-    </section>
-
-    <!-- Row 3: Today's Trades -->
-    <section class="panel panel-today"
-             hx-get="/partials/today" hx-trigger="every 30s" hx-swap="innerHTML">
-      {% include 'partials/todays_trades.html' %}
-    </section>
-
-    <!-- Row 4: Performance -->
-    <section class="panel panel-performance" id="perf-panel">
-      {% include 'partials/performance.html' %}
-    </section>
-
-    <!-- Row 5: Charts -->
-    <section class="panel panel-charts">
-      <h2>Equity Curve</h2>
-      <div class="chart-container">
-        <canvas id="equityChart"></canvas>
-      </div>
-      <h2>Daily P/L Calendar</h2>
-      <div class="chart-container">
-        <canvas id="calendarChart"></canvas>
-      </div>
-    </section>
-
-    <!-- Row 6: Strategy Rules -->
-    <section class="panel panel-strategies">
-      {% include 'partials/strategy_rules.html' %}
-    </section>
-
-    <!-- Row 7: System Health -->
-    <section class="panel panel-system"
-             hx-get="/partials/system" hx-trigger="every 30s" hx-swap="innerHTML">
-      {% include 'partials/system_health.html' %}
-    </section>
-  </main>
-
-  <!-- Bootstrap chart data from initial load -->
-  <script>
-    window.__chartData = {
-      equity_curve: {{ perf.equity_curve | tojson }},
-      calendar: {{ perf.calendar | tojson }}
-    };
-  </script>
   <script src="/static/js/dashboard.js"></script>
   <script src="/static/js/charts.js"></script>
 </body>

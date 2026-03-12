@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gap Checker - Run at 2:45pm to validate overnight gap filter"""
+"""Gap Checker - Run at 1:45pm to validate overnight gap filter"""
 
 import os
 import asyncio

@@ -3,7 +3,7 @@ from datetime import time, datetime
 import pytz
 
 # Mocking the logic in main.py
-target_times = [time(14, 45), time(15, 0), time(15, 30)]
+target_times = [time(13, 45), time(14, 0), time(14, 30)]
 
 async def mock_execution(name):
     print(f"[{name}] Triggered Trade Entry")
@@ -18,26 +18,26 @@ async def check_time(mock_now_time):
     return False
 
 async def test_logic():
-    print("Testing 14:45...")
-    if await check_time(time(14, 45)):
+    print("Testing 13:45...")
+    if await check_time(time(13, 45)):
         print("PASS")
     else:
         print("FAIL")
 
-    print("\nTesting 15:00...")
-    if await check_time(time(15, 0)):
+    print("\nTesting 14:00...")
+    if await check_time(time(14, 0)):
         print("PASS")
     else:
         print("FAIL")
 
-    print("\nTesting 15:30...")
-    if await check_time(time(15, 30)):
+    print("\nTesting 14:30...")
+    if await check_time(time(14, 30)):
         print("PASS")
     else:
         print("FAIL")
 
-    print("\nTesting 14:00 (Should fail)...")
-    if not await check_time(time(14, 0)):
+    print("\nTesting 13:00 (Should fail)...")
+    if not await check_time(time(13, 0)):
         print("PASS")
     else:
         print("FAIL")

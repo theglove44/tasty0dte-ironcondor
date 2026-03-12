@@ -60,7 +60,7 @@ def view_trades():
             strat = row.get('Strategy', '')
             # Criteria derived from known codebase logic
             if '30 Delta' in strat:
-                return "25% Profit | 18:00 Exit"
+                return "25% Profit | 17:00 Exit"
             elif '20 Delta' in strat:
                 return "25% Profit | EOD Exp"
             return "Unknown"

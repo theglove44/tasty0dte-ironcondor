@@ -168,6 +168,17 @@ def get_performance_metrics(period: str = "all", strategy: str = "") -> dict:
         m["strategy"] = strat.strip() if isinstance(strat, str) else str(strat)
         by_strategy.append(m)
 
+    # Per strategy + time bucket breakdown
+    by_time_bucket = []
+    if "Entry Time" in closed.columns:
+        closed["_time_bucket"] = closed["Entry Time"].str.strip().str[:5]
+        for (strat, tbucket), grp in closed.groupby(["Strategy", "_time_bucket"]):
+            m = _calc_metrics(grp)
+            m["strategy"] = strat.strip() if isinstance(strat, str) else str(strat)
+            m["time_bucket"] = tbucket
+            by_time_bucket.append(m)
+        by_time_bucket.sort(key=lambda x: (x["strategy"], x["time_bucket"]))
+
     # Filter for charts if a specific strategy is selected
     chart_data = closed
     if strategy:
@@ -192,6 +203,7 @@ def get_performance_metrics(period: str = "all", strategy: str = "") -> dict:
     return {
         "overall": overall,
         "by_strategy": by_strategy,
+        "by_time_bucket": by_time_bucket,
         "equity_curve": equity_curve,
         "calendar": calendar,
         "period": period,
@@ -234,6 +246,7 @@ def _empty_perf() -> dict:
             "expectancy": 0,
         },
         "by_strategy": [],
+        "by_time_bucket": [],
         "equity_curve": {"labels": [], "values": []},
         "calendar": {"labels": [], "values": []},
         "period": "all",
@@ -271,21 +284,21 @@ def get_market_session() -> dict:
     if weekday >= 5:
         return {"status": "Closed", "detail": "Weekend", "countdown": ""}
 
-    market_open = now.replace(hour=14, minute=30, second=0, microsecond=0)
-    market_close = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    market_open = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=20, minute=0, second=0, microsecond=0)
 
     if now < market_open:
         delta = market_open - now
         return {
             "status": "Pre-Market",
-            "detail": "Opens at 14:30 UK",
+            "detail": "Opens at 13:30 UK",
             "countdown": _format_delta(delta),
         }
     elif now <= market_close:
         delta = market_close - now
         return {
             "status": "Open",
-            "detail": "Closes at 21:00 UK",
+            "detail": "Closes at 20:00 UK",
             "countdown": _format_delta(delta),
         }
     else:

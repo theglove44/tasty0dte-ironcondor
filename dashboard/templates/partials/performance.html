@@ -4,8 +4,7 @@
     <button class="btn-period {% if perf.period == p %}active{% endif %}"
             hx-get="/partials/performance?period={{ p }}"
             hx-target="#perf-panel"
-            hx-swap="innerHTML"
-            onclick="updateCharts('{{ p }}')">
+            hx-swap="innerHTML">
       {{ p | capitalize }}
     </button>
   {% endfor %}
@@ -47,14 +46,7 @@
 
 <!-- Per-strategy breakdown -->
 {% if perf.by_strategy %}
-<h3>By Strategy
-  {% if perf.strategy %}
-    <span class="strategy-filter-label">
-      Showing: {{ perf.strategy }}
-      <button class="btn-clear-filter" onclick="selectStrategy('')" title="Show all">&times;</button>
-    </span>
-  {% endif %}
-</h3>
+<h3>By Strategy</h3>
 <div class="table-wrap">
   <table>
     <thead>
@@ -70,9 +62,53 @@
     </thead>
     <tbody>
       {% for s in perf.by_strategy %}
-      <tr class="strategy-row {% if perf.strategy == s.strategy %}strategy-selected{% endif %}"
-          onclick="selectStrategy('{{ s.strategy }}')" title="Click to filter charts">
+      <tr>
         <td><span class="badge badge-{{ 'fly' if 'Fly' in s.strategy else 'condor' }}">{{ s.strategy }}</span></td>
+        <td>{{ s.total_trades }}</td>
+        <td>{{ s.win_rate }}%</td>
+        <td class="mono {% if s.total_pl >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+          {{ "+" if s.total_pl >= 0 else "" }}${{ "%.2f" | format(s.total_pl) }}
+        </td>
+        <td class="mono pl-pos">${{ "%.2f" | format(s.avg_win) }}</td>
+        <td class="mono pl-neg">${{ "%.2f" | format(s.avg_loss) }}</td>
+        <td class="mono {% if s.expectancy >= 0 %}pl-pos{% else %}pl-neg{% endif %}">
+          {{ "+" if s.expectancy >= 0 else "" }}${{ "%.2f" | format(s.expectancy) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Per strategy + time bucket breakdown -->
+{% if perf.by_time_bucket %}
+<h3>By Strategy + Entry Time</h3>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Strategy</th>
+        <th>Entry Time</th>
+        <th>Trades</th>
+        <th>Win Rate</th>
+        <th>Total P/L</th>
+        <th>Avg Win</th>
+        <th>Avg Loss</th>
+        <th>Expectancy</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set ns = namespace(last_strategy='') %}
+      {% for s in perf.by_time_bucket %}
+      <tr class="{% if s.strategy != ns.last_strategy and not loop.first %}time-bucket-divider{% endif %}">
+        <td>
+          {% if s.strategy != ns.last_strategy %}
+            <span class="badge badge-{{ 'fly' if 'Fly' in s.strategy else 'condor' }}">{{ s.strategy }}</span>
+            {% set ns.last_strategy = s.strategy %}
+          {% endif %}
+        </td>
+        <td class="mono">{{ s.time_bucket }}</td>
         <td>{{ s.total_trades }}</td>
         <td>{{ s.win_rate }}%</td>
         <td class="mono {% if s.total_pl >= 0 %}pl-pos{% else %}pl-neg{% endif %}">

@@ -59,7 +59,72 @@ body {
   color: var(--text-secondary);
 }
 
-/* Grid layout */
+/* App layout: sidebar + main */
+.app-layout {
+  display: flex;
+  min-height: calc(100vh - 49px);
+}
+
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 49px;
+  height: calc(100vh - 49px);
+  overflow-y: auto;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  color: var(--cyan);
+  border-left-color: var(--cyan);
+  background: rgba(6, 182, 212, 0.08);
+}
+
+.nav-icon {
+  font-size: 10px;
+  width: 16px;
+  text-align: center;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 24px;
+  max-width: 1200px;
+}
+
+/* Page grid (replaces old .grid) */
+.page-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Legacy .grid still supported */
 .grid {
   display: flex;
   flex-direction: column;
@@ -341,6 +406,11 @@ tbody tr:hover {
   color: var(--red);
 }
 
+/* Time bucket divider */
+.time-bucket-divider td {
+  border-top: 2px solid var(--border);
+}
+
 /* Charts */
 .chart-container {
   position: relative;
@@ -506,8 +576,36 @@ tbody tr:hover {
 }
 
 /* Responsive */
+@media (max-width: 900px) {
+  .app-layout { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    min-width: unset;
+    flex-direction: row;
+    height: auto;
+    position: sticky;
+    top: 49px;
+    overflow-x: auto;
+    padding: 8px 12px;
+    gap: 4px;
+  }
+  .nav-item {
+    padding: 8px 14px;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .nav-item.active {
+    border-left-color: transparent;
+    border-bottom-color: var(--cyan);
+  }
+  .main-content { padding: 12px; }
+}
+
 @media (max-width: 768px) {
   .grid { padding: 8px; gap: 8px; }
+  .page-grid { gap: 8px; }
   .panel { padding: 12px; }
   .market-grid { grid-template-columns: 1fr; }
   .perf-cards { grid-template-columns: repeat(2, 1fr); }

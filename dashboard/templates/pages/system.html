@@ -1,0 +1,7 @@
+<!-- System Health -->
+<div class="page-grid">
+  <section class="panel panel-system"
+           hx-get="/partials/system" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include 'partials/system_health.html' %}
+  </section>
+</div>

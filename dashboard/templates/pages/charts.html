@@ -1,0 +1,38 @@
+<!-- Charts: Equity Curve + Daily P/L Calendar -->
+<div class="page-grid">
+  <section class="panel">
+    <h2>Period</h2>
+    <div class="period-buttons">
+      {% for p in ['day', 'week', 'month', 'year', 'all'] %}
+        <button class="btn-period {% if period == p %}active{% endif %}"
+                hx-get="/pages/charts?period={{ p }}"
+                hx-target="#main-content"
+                hx-swap="innerHTML">
+          {{ p | capitalize }}
+        </button>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel panel-charts">
+    <h2>Equity Curve</h2>
+    <div class="chart-container">
+      <canvas id="equityChart"></canvas>
+    </div>
+    <h2>Daily P/L Calendar</h2>
+    <div class="chart-container">
+      <canvas id="calendarChart"></canvas>
+    </div>
+  </section>
+</div>
+
+<!-- Bootstrap chart data -->
+<script>
+  window.__chartData = {
+    equity_curve: {{ perf.equity_curve | tojson }},
+    calendar: {{ perf.calendar | tojson }}
+  };
+  if (typeof renderCharts === 'function') {
+    renderCharts(window.__chartData);
+  }
+</script>
