@@ -6,7 +6,7 @@ then watches for the first breakout candle close outside the range.
 On breakout, enters a credit spread opposite the breakout direction.
 
 Lifecycle (US DST active, UK still GMT):
-  13:30–13:50 UK: Collect ORB (stream SPX Trade events, build 5-min candles)
+  13:30–13:50 UK: Collect ORB (stream SPX Quote events, build 5-min candles)
   13:50–16:00 UK: Monitor for breakout (5-min candle closes)
   On breakout:   Execute put credit spread (bullish) or call credit spread (bearish)
   16:00 UK:      Timeout if no breakout (noon ET)
@@ -18,7 +18,7 @@ from datetime import datetime, time, timedelta
 import pytz
 
 from tastytrade import Session, DXLinkStreamer
-from tastytrade.dxfeed import Trade
+from tastytrade.dxfeed import Quote
 from tastytrade.instruments import OptionType
 
 import strategy as strategy_mod
@@ -128,7 +128,7 @@ def _check_breakout(candle: dict, orb: dict) -> dict | None:
 
 async def _stream_candles(session: Session, start_time: datetime,
                           end_time: datetime, candle_minutes: int = 5) -> list[dict]:
-    """Stream SPX Trade events and build 5-min OHLC candles.
+    """Stream SPX Quote events and build 5-min OHLC candles.
 
     Returns list of completed candles between start_time and end_time.
     """
@@ -136,12 +136,14 @@ async def _stream_candles(session: Session, start_time: datetime,
     current_candle = None
     current_boundary = _candle_boundary(start_time, candle_minutes)
     next_boundary = current_boundary + timedelta(minutes=candle_minutes)
+    tick_count = 0
 
     try:
         async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe(Trade, ["SPX"])
+            await streamer.subscribe(Quote, ["SPX"])
+            logger.info(f"Subscribed to SPX Quote stream for candle collection")
 
-            async for event in streamer.listen(Trade):
+            async for event in streamer.listen(Quote):
                 now = _now_uk()
 
                 # Past end time — finalize any open candle and stop
@@ -152,15 +154,31 @@ async def _stream_candles(session: Session, start_time: datetime,
 
                 events = event if isinstance(event, list) else [event]
                 for e in events:
-                    if not isinstance(e, Trade) or e.event_symbol != "SPX" or not e.price:
+                    if not isinstance(e, Quote) or e.event_symbol != "SPX":
                         continue
 
-                    price = float(e.price)
+                    # Mid-price from bid/ask
+                    if e.bid_price and e.ask_price:
+                        price = (float(e.bid_price) + float(e.ask_price)) / 2
+                    elif e.bid_price:
+                        price = float(e.bid_price)
+                    elif e.ask_price:
+                        price = float(e.ask_price)
+                    else:
+                        continue
+
+                    tick_count += 1
+                    if tick_count == 1:
+                        logger.info(f"First SPX quote tick: {price:.2f}")
 
                     # Rotate candle if we've crossed a boundary
                     if now >= next_boundary:
                         if current_candle and current_candle.get('open') is not None:
                             candles.append(current_candle)
+                            logger.debug(
+                                f"Candle #{len(candles)} complete: "
+                                f"O={current_candle['open']:.2f} H={current_candle['high']:.2f} "
+                                f"L={current_candle['low']:.2f} C={current_candle['close']:.2f}")
                         current_boundary = _candle_boundary(now, candle_minutes)
                         next_boundary = current_boundary + timedelta(minutes=candle_minutes)
                         current_candle = None
@@ -180,6 +198,7 @@ async def _stream_candles(session: Session, start_time: datetime,
     except Exception as e:
         logger.error(f"Error streaming candles: {type(e).__name__}: {e}")
 
+    logger.info(f"Candle streaming done: {len(candles)} candles from {tick_count} ticks")
     return candles
 
 
@@ -234,9 +253,9 @@ async def _monitor_for_breakout(session: Session, orb: dict) -> dict | None:
 
     try:
         async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe(Trade, ["SPX"])
+            await streamer.subscribe(Quote, ["SPX"])
 
-            async for event in streamer.listen(Trade):
+            async for event in streamer.listen(Quote):
                 now = _now_uk()
 
                 if now >= timeout:
@@ -245,10 +264,17 @@ async def _monitor_for_breakout(session: Session, orb: dict) -> dict | None:
 
                 events = event if isinstance(event, list) else [event]
                 for e in events:
-                    if not isinstance(e, Trade) or e.event_symbol != "SPX" or not e.price:
+                    if not isinstance(e, Quote) or e.event_symbol != "SPX":
                         continue
 
-                    price = float(e.price)
+                    if e.bid_price and e.ask_price:
+                        price = (float(e.bid_price) + float(e.ask_price)) / 2
+                    elif e.bid_price:
+                        price = float(e.bid_price)
+                    elif e.ask_price:
+                        price = float(e.ask_price)
+                    else:
+                        continue
 
                     # Candle rotation — check breakout on completed candle
                     if now >= next_boundary:

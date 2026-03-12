@@ -273,8 +273,14 @@ async def main():
                 _overnight_gap_cache['reason'] = None
                 logger.info(f"New trading day: {today}")
 
-            # Check for entry times
+            # Launch Premium Popper at 13:30 UK (market open) to collect ORB
             current_time = now_uk.time()
+            if (current_time.hour == 13 and current_time.minute == 30 and not popper_started_today):
+                popper_started_today = True
+                logger.info("Launching Premium Popper ORB20 background task...")
+                asyncio.create_task(premium_popper.run_premium_popper(session))
+
+            # Check for entry times
             for target in target_times:
                 if (current_time.hour == target.hour and 
                     current_time.minute == target.minute and
@@ -308,12 +314,6 @@ async def main():
                         logger.error(f"Trade cycle failed: {type(e).__name__}: {e}")
                         # Don't crash - just log and continue
 
-                    # Launch Premium Popper at first trigger (13:45 UK ≈ market open)
-                    if target == time(13, 45) and not popper_started_today:
-                        popper_started_today = True
-                        logger.info("Launching Premium Popper ORB20 background task...")
-                        asyncio.create_task(premium_popper.run_premium_popper(session))
-                    
                     # Sleep to avoid re-triggering in same minute
                     await asyncio.sleep(60)
                     break
