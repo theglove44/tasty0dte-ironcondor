@@ -28,6 +28,7 @@ class TestIronFlyLegs(unittest.IsolatedAsyncioTestCase):
             o.strike_price = strike
             o.option_type = otype
             o.streamer_symbol = sym
+            o.symbol = f"SPX 260321{'C' if otype == OptionType.CALL else 'P'}{strike:08d}"
             return o
 
         for k in strikes:
@@ -67,17 +68,13 @@ class TestIronFlyLegs(unittest.IsolatedAsyncioTestCase):
         original_get_greeks = strategy.get_greeks_for_chain
         strategy.get_greeks_for_chain = AsyncMock(return_value=greeks_map)
         
-        # Mock get_quote_snapshot to return prices
-        async def mock_quotes(sess, syms):
-            q = {}
-            for s in syms:
-                qm = MagicMock()
-                qm.bid_price = 1.0
-                qm.ask_price = 2.0
-                q[s] = qm
-            return q
-            
-        strategy.get_quote_snapshot = AsyncMock(side_effect=mock_quotes)
+        # Mock _fetch_leg_prices to populate prices without REST API call
+        async def mock_fetch_prices(sess, legs):
+            for k in legs:
+                legs[k]['price'] = 1.50
+
+        original_fetch_prices = strategy._fetch_leg_prices
+        strategy._fetch_leg_prices = mock_fetch_prices
         
         try:
             # Test Logic
@@ -100,6 +97,7 @@ class TestIronFlyLegs(unittest.IsolatedAsyncioTestCase):
         finally:
             # Restore
             strategy.get_greeks_for_chain = original_get_greeks
+            strategy._fetch_leg_prices = original_fetch_prices
 
 if __name__ == "__main__":
     unittest.main()

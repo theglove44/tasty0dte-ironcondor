@@ -6,7 +6,7 @@ then watches for the first breakout candle close outside the range.
 On breakout, enters a credit spread opposite the breakout direction.
 
 Lifecycle (US DST active, UK still GMT):
-  13:30–13:50 UK: Collect ORB (stream SPX Quote events, build 5-min candles)
+  13:30–13:50 UK: Collect ORB (poll SPX spot price, build 5-min candles)
   13:50–16:00 UK: Monitor for breakout (5-min candle closes)
   On breakout:   Execute put credit spread (bullish) or call credit spread (bearish)
   16:00 UK:      Timeout if no breakout (noon ET)
@@ -17,8 +17,7 @@ import logging
 from datetime import datetime, time, timedelta
 import pytz
 
-from tastytrade import Session, DXLinkStreamer
-from tastytrade.dxfeed import Quote
+from tastytrade import Session
 from tastytrade.instruments import OptionType
 
 import strategy as strategy_mod
@@ -99,14 +98,13 @@ def _check_breakout(candle: dict, orb: dict) -> dict | None:
     close = candle['close']
     body = abs(candle['close'] - candle['open'])
     orb_range = orb['range']
-    bias = orb['bias']
 
     # Expansion filter
     if body < orb_range * EXPANSION_THRESHOLD:
         return None
 
     # Bullish breakout
-    if close > orb['high'] and bias in ('bullish', 'neutral'):
+    if close > orb['high']:
         return {
             'direction': 'bullish',
             'candle': candle,
@@ -115,7 +113,7 @@ def _check_breakout(candle: dict, orb: dict) -> dict | None:
         }
 
     # Bearish breakout
-    if close < orb['low'] and bias in ('bearish', 'neutral'):
+    if close < orb['low']:
         return {
             'direction': 'bearish',
             'candle': candle,
@@ -126,9 +124,13 @@ def _check_breakout(candle: dict, orb: dict) -> dict | None:
     return None
 
 
-async def _stream_candles(session: Session, start_time: datetime,
-                          end_time: datetime, candle_minutes: int = 5) -> list[dict]:
-    """Stream SPX Quote events and build 5-min OHLC candles.
+async def _poll_candles(session: Session, start_time: datetime,
+                        end_time: datetime, candle_minutes: int = 5,
+                        poll_interval: int = 3) -> list[dict]:
+    """Poll SPX spot price and build OHLC candles.
+
+    Uses get_spx_spot() which is reliable even when other DXLinkStreamers
+    are active (avoids concurrent streamer conflicts).
 
     Returns list of completed candles between start_time and end_time.
     """
@@ -138,67 +140,63 @@ async def _stream_candles(session: Session, start_time: datetime,
     next_boundary = current_boundary + timedelta(minutes=candle_minutes)
     tick_count = 0
 
-    try:
-        async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe(Quote, ["SPX"])
-            logger.info(f"Subscribed to SPX Quote stream for candle collection")
+    while True:
+        now = _now_uk()
 
-            async for event in streamer.listen(Quote):
-                now = _now_uk()
+        # Past end time — finalize any open candle and stop
+        if now >= end_time:
+            if current_candle and current_candle.get('open') is not None:
+                candles.append(current_candle)
+                logger.info(
+                    f"Final candle #{len(candles)}: "
+                    f"O={current_candle['open']:.2f} H={current_candle['high']:.2f} "
+                    f"L={current_candle['low']:.2f} C={current_candle['close']:.2f}")
+            break
 
-                # Past end time — finalize any open candle and stop
-                if now >= end_time:
-                    if current_candle and current_candle.get('open') is not None:
-                        candles.append(current_candle)
-                    break
+        # Poll SPX price
+        try:
+            price = await strategy_mod.get_spx_spot(session, timeout_s=5, retries=1)
+        except Exception as e:
+            logger.warning(f"Poll failed: {type(e).__name__}: {e}")
+            await asyncio.sleep(poll_interval)
+            continue
 
-                events = event if isinstance(event, list) else [event]
-                for e in events:
-                    if not isinstance(e, Quote) or e.event_symbol != "SPX":
-                        continue
+        if price is None:
+            logger.debug("SPX spot returned None, retrying...")
+            await asyncio.sleep(poll_interval)
+            continue
 
-                    # Mid-price from bid/ask
-                    if e.bid_price and e.ask_price:
-                        price = (float(e.bid_price) + float(e.ask_price)) / 2
-                    elif e.bid_price:
-                        price = float(e.bid_price)
-                    elif e.ask_price:
-                        price = float(e.ask_price)
-                    else:
-                        continue
+        tick_count += 1
+        if tick_count == 1:
+            logger.info(f"First SPX poll: {price:.2f}")
 
-                    tick_count += 1
-                    if tick_count == 1:
-                        logger.info(f"First SPX quote tick: {price:.2f}")
+        # Rotate candle if we've crossed a boundary
+        if now >= next_boundary:
+            if current_candle and current_candle.get('open') is not None:
+                candles.append(current_candle)
+                logger.info(
+                    f"Candle #{len(candles)} complete: "
+                    f"O={current_candle['open']:.2f} H={current_candle['high']:.2f} "
+                    f"L={current_candle['low']:.2f} C={current_candle['close']:.2f}")
+            current_boundary = _candle_boundary(now, candle_minutes)
+            next_boundary = current_boundary + timedelta(minutes=candle_minutes)
+            current_candle = None
 
-                    # Rotate candle if we've crossed a boundary
-                    if now >= next_boundary:
-                        if current_candle and current_candle.get('open') is not None:
-                            candles.append(current_candle)
-                            logger.debug(
-                                f"Candle #{len(candles)} complete: "
-                                f"O={current_candle['open']:.2f} H={current_candle['high']:.2f} "
-                                f"L={current_candle['low']:.2f} C={current_candle['close']:.2f}")
-                        current_boundary = _candle_boundary(now, candle_minutes)
-                        next_boundary = current_boundary + timedelta(minutes=candle_minutes)
-                        current_candle = None
+        # Initialize or update candle
+        if current_candle is None:
+            current_candle = {
+                'open': price, 'high': price,
+                'low': price, 'close': price,
+                'start': current_boundary,
+            }
+        else:
+            current_candle['high'] = max(current_candle['high'], price)
+            current_candle['low'] = min(current_candle['low'], price)
+            current_candle['close'] = price
 
-                    # Initialize or update candle
-                    if current_candle is None:
-                        current_candle = {
-                            'open': price, 'high': price,
-                            'low': price, 'close': price,
-                            'start': current_boundary,
-                        }
-                    else:
-                        current_candle['high'] = max(current_candle['high'], price)
-                        current_candle['low'] = min(current_candle['low'], price)
-                        current_candle['close'] = price
+        await asyncio.sleep(poll_interval)
 
-    except Exception as e:
-        logger.error(f"Error streaming candles: {type(e).__name__}: {e}")
-
-    logger.info(f"Candle streaming done: {len(candles)} candles from {tick_count} ticks")
+    logger.info(f"Candle polling done: {len(candles)} candles from {tick_count} polls")
     return candles
 
 
@@ -220,15 +218,18 @@ async def _collect_opening_range(session: Session) -> dict | None:
         await asyncio.sleep(wait_secs)
 
     logger.info("Starting ORB collection (13:30-13:50 UK)...")
-    candles = await _stream_candles(session, orb_start, orb_end,
-                                     candle_minutes=ORB_CANDLE_MINUTES)
+    candles = await _poll_candles(session, orb_start, orb_end,
+                                  candle_minutes=ORB_CANDLE_MINUTES)
 
     logger.info(f"ORB collection complete: {len(candles)} candle(s)")
     return _calculate_orb(candles)
 
 
 async def _monitor_for_breakout(session: Session, orb: dict) -> dict | None:
-    """Watch 5-min candle closes for a breakout after ORB period."""
+    """Watch 5-min candle closes for a breakout after ORB period.
+
+    Uses polling via get_spx_spot() to avoid concurrent DXLinkStreamer conflicts.
+    """
     now = _now_uk()
     monitor_start = now.replace(hour=13, minute=50, second=0, microsecond=0)
     timeout = now.replace(hour=BREAKOUT_TIMEOUT.hour, minute=BREAKOUT_TIMEOUT.minute,
@@ -248,70 +249,63 @@ async def _monitor_for_breakout(session: Session, orb: dict) -> dict | None:
 
     current_candle = None
     candle_minutes = 5
+    poll_interval = 3
     current_boundary = _candle_boundary(_now_uk(), candle_minutes)
     next_boundary = current_boundary + timedelta(minutes=candle_minutes)
 
-    try:
-        async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe(Quote, ["SPX"])
+    while True:
+        now = _now_uk()
 
-            async for event in streamer.listen(Quote):
-                now = _now_uk()
+        if now >= timeout:
+            logger.info("No breakout before 16:00 UK (noon ET). Timeout.")
+            return None
 
-                if now >= timeout:
-                    logger.info("No breakout before 16:00 UK (noon ET). Timeout.")
-                    return None
+        try:
+            price = await strategy_mod.get_spx_spot(session, timeout_s=5, retries=1)
+        except Exception as e:
+            logger.warning(f"Breakout poll failed: {type(e).__name__}: {e}")
+            await asyncio.sleep(poll_interval)
+            continue
 
-                events = event if isinstance(event, list) else [event]
-                for e in events:
-                    if not isinstance(e, Quote) or e.event_symbol != "SPX":
-                        continue
+        if price is None:
+            await asyncio.sleep(poll_interval)
+            continue
 
-                    if e.bid_price and e.ask_price:
-                        price = (float(e.bid_price) + float(e.ask_price)) / 2
-                    elif e.bid_price:
-                        price = float(e.bid_price)
-                    elif e.ask_price:
-                        price = float(e.ask_price)
-                    else:
-                        continue
+        # Candle rotation — check breakout on completed candle
+        if now >= next_boundary:
+            if current_candle and current_candle.get('open') is not None:
+                breakout = _check_breakout(current_candle, orb)
+                if breakout:
+                    breakout['time'] = now.strftime("%H:%M:%S")
+                    logger.info(
+                        f"BREAKOUT detected: {breakout['direction']} "
+                        f"at {breakout['time']}, body={breakout['body']:.2f}, "
+                        f"expansion={breakout['expansion_ratio']:.2f}")
+                    return breakout
+                else:
+                    logger.info(
+                        f"Candle closed: O={current_candle['open']:.2f} "
+                        f"H={current_candle['high']:.2f} "
+                        f"L={current_candle['low']:.2f} "
+                        f"C={current_candle['close']:.2f} — no breakout")
 
-                    # Candle rotation — check breakout on completed candle
-                    if now >= next_boundary:
-                        if current_candle and current_candle.get('open') is not None:
-                            breakout = _check_breakout(current_candle, orb)
-                            if breakout:
-                                breakout['time'] = now.strftime("%H:%M:%S")
-                                logger.info(
-                                    f"BREAKOUT detected: {breakout['direction']} "
-                                    f"at {breakout['time']}, body={breakout['body']:.2f}, "
-                                    f"expansion={breakout['expansion_ratio']:.2f}")
-                                return breakout
-                            else:
-                                logger.debug(
-                                    f"Candle closed: O={current_candle['open']:.2f} "
-                                    f"H={current_candle['high']:.2f} "
-                                    f"L={current_candle['low']:.2f} "
-                                    f"C={current_candle['close']:.2f} — no breakout")
+            current_boundary = _candle_boundary(now, candle_minutes)
+            next_boundary = current_boundary + timedelta(minutes=candle_minutes)
+            current_candle = None
 
-                        current_boundary = _candle_boundary(now, candle_minutes)
-                        next_boundary = current_boundary + timedelta(minutes=candle_minutes)
-                        current_candle = None
+        # Update candle
+        if current_candle is None:
+            current_candle = {
+                'open': price, 'high': price,
+                'low': price, 'close': price,
+                'start': current_boundary,
+            }
+        else:
+            current_candle['high'] = max(current_candle['high'], price)
+            current_candle['low'] = min(current_candle['low'], price)
+            current_candle['close'] = price
 
-                    # Update candle
-                    if current_candle is None:
-                        current_candle = {
-                            'open': price, 'high': price,
-                            'low': price, 'close': price,
-                            'start': current_boundary,
-                        }
-                    else:
-                        current_candle['high'] = max(current_candle['high'], price)
-                        current_candle['low'] = min(current_candle['low'], price)
-                        current_candle['close'] = price
-
-    except Exception as e:
-        logger.error(f"Error monitoring breakout: {type(e).__name__}: {e}")
+        await asyncio.sleep(poll_interval)
 
     return None
 
@@ -380,7 +374,7 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
         return
 
     # Build 4-leg dict (NONE for unused side)
-    none_leg = {'symbol': 'NONE', 'strike': 0, 'delta': 0, 'price': 0}
+    none_leg = {'symbol': 'NONE', 'occ_symbol': 'NONE', 'strike': 0, 'delta': 0, 'price': 0}
 
     if side == 'put':
         legs = {
@@ -404,7 +398,14 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
     for k, v in active_legs.items():
         legs[k] = v
 
-    credit = legs[f'short_{side}']['price'] - legs[f'long_{side}']['price']
+    short_price = legs[f'short_{side}']['price']
+    long_price = legs[f'long_{side}']['price']
+
+    if short_price <= 0 or long_price <= 0:
+        logger.warning(f"Missing price data: short={short_price}, long={long_price}. Skipping.")
+        return
+
+    credit = round(short_price - long_price, 2)
 
     if credit < MIN_CREDIT:
         logger.info(f"Premium too low: ${credit:.2f} < ${MIN_CREDIT}. Skipping.")

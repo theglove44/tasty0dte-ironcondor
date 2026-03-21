@@ -2,6 +2,7 @@ from datetime import date, datetime
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.instruments import NestedOptionChain, Option
 from tastytrade.dxfeed import Summary
+from tastytrade.market_data import a_get_market_data_by_type
 from tastytrade.utils import get_tasty_monthly
 import pandas as pd
 import logging
@@ -399,36 +400,6 @@ async def get_spx_close(session: Session, timeout_s: int = 10, retries: int = 3)
     return None
 
 
-async def get_quote_snapshot(session: Session, symbols: list):
-    """
-    Fetches a snapshot of quotes for a list of symbols.
-    """
-    quotes = {}
-    if not symbols:
-        return quotes
-        
-    logger.info(f"Fetching quotes for {len(symbols)} symbols...")
-    
-    async with DXLinkStreamer(session) as streamer:
-        await streamer.subscribe(Quote, symbols)
-        
-        start_time = datetime.now()
-        async for event in streamer.listen(Quote):
-            if (datetime.now() - start_time).seconds > 5:
-                # logger.warning("Timeout waiting for Quotes.")
-                break
-            
-            if isinstance(event, list):
-                for e in event:
-                     if isinstance(e, Quote):
-                        quotes[e.event_symbol] = e
-            elif isinstance(event, Quote):
-                quotes[event.event_symbol] = event
-
-            if len(quotes) >= len(symbols):
-                break
-                
-    return quotes
 
 async def get_greeks_for_chain(session: Session, options_list: list):
     """
@@ -479,7 +450,12 @@ def _separate_calls_puts(options_list: list, greeks: dict):
     for option in options_list:
         if option.streamer_symbol in greeks:
             delta = float(greeks[option.streamer_symbol].delta)
-            entry = {'symbol': option.streamer_symbol, 'strike': option.strike_price, 'delta': delta}
+            entry = {
+                'symbol': option.streamer_symbol,
+                'occ_symbol': option.symbol,
+                'strike': option.strike_price,
+                'delta': delta,
+            }
             if option.option_type == OptionType.CALL:
                 calls.append(entry)
             elif option.option_type == OptionType.PUT:
@@ -490,19 +466,39 @@ def _separate_calls_puts(options_list: list, greeks: dict):
 
 
 async def _fetch_leg_prices(session: Session, legs: dict):
-    """Populate each leg dict with a 'price' key from live quotes."""
-    leg_symbols = [legs[k]['symbol'] for k in legs]
-    quotes = await get_quote_snapshot(session, leg_symbols)
+    """Populate each leg dict with a 'price' key from REST market data.
+
+    Uses the REST /market-data/by-type endpoint which returns reliable
+    mark prices, avoiding DXLink streaming timeouts on illiquid options.
+    """
+    occ_symbols = [legs[k]['occ_symbol'] for k in legs if legs[k].get('occ_symbol')]
+    if not occ_symbols:
+        logger.warning("No OCC symbols found on legs, cannot fetch prices")
+        return
+
+    try:
+        market_data = await _unwrap_awaitable(
+            a_get_market_data_by_type(session, options=occ_symbols)
+        )
+        md_by_symbol = {md.symbol: md for md in market_data}
+    except Exception as e:
+        logger.error(f"REST market data fetch failed: {type(e).__name__}: {e}")
+        return
+
     for k in legs:
-        sym = legs[k]['symbol']
+        occ = legs[k].get('occ_symbol', '')
         price = 0.0
-        if sym in quotes:
-            q = quotes[sym]
-            if q.bid_price and q.ask_price:
-                price = (q.bid_price + q.ask_price) / 2
-            else:
-                price = q.ask_price or q.bid_price or 0.0
-        legs[k]['price'] = float(price)
+        if occ in md_by_symbol:
+            md = md_by_symbol[occ]
+            if md.mark is not None:
+                price = float(md.mark)
+            elif md.mid is not None:
+                price = float(md.mid)
+            elif md.bid is not None and md.ask is not None:
+                price = float((md.bid + md.ask) / 2)
+        if price == 0.0:
+            logger.warning(f"No price data for {occ}")
+        legs[k]['price'] = price
 
 
 async def find_iron_condor_legs(session: Session, options_list: list, target_delta: float = 0.20):
