@@ -2,7 +2,7 @@ from datetime import date, datetime
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.instruments import NestedOptionChain, Option
 from tastytrade.dxfeed import Summary
-from tastytrade.market_data import a_get_market_data_by_type
+from tastytrade.market_data import get_market_data_by_type
 from tastytrade.utils import get_tasty_monthly
 import pandas as pd
 import logging
@@ -478,7 +478,7 @@ async def _fetch_leg_prices(session: Session, legs: dict):
 
     try:
         market_data = await _unwrap_awaitable(
-            a_get_market_data_by_type(session, options=occ_symbols)
+            get_market_data_by_type(session, options=occ_symbols)
         )
         md_by_symbol = {md.symbol: md for md in market_data}
     except Exception as e:
