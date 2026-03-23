@@ -434,6 +434,36 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
     logger.info(f"Premium Popper trade logged: {side} credit spread, "
                 f"credit=${credit:.2f}, stop=${stop_loss:.2f}")
 
+    # Discord notification
+    try:
+        from local import discord_notify
+    except Exception:
+        discord_notify = None
+
+    if discord_notify:
+        try:
+            spx_spot = await strategy_mod.get_spx_spot(session)
+            credit_pct = (credit / SPREAD_WIDTH) * 100
+            profit_target_debit = credit - profit_target
+
+            payload = discord_notify.format_trade_open_payload(
+                strategy_name="Premium Popper",
+                short_call_symbol=legs['short_call']['symbol'],
+                long_call_symbol=legs['long_call']['symbol'],
+                short_put_symbol=legs['short_put']['symbol'],
+                long_put_symbol=legs['long_put']['symbol'],
+                credit=float(credit),
+                profit_target=float(profit_target),
+                profit_target_debit=profit_target_debit,
+                wing_width=SPREAD_WIDTH,
+                credit_pct=credit_pct,
+                spx_spot=spx_spot,
+                iv_rank=iv_rank
+            )
+            discord_notify.send_discord_webhook(payload)
+        except Exception as e:
+            logger.warning(f"Premium Popper notification failed: {e}")
+
 
 async def run_premium_popper(session: Session) -> None:
     """Main entry point — launched as asyncio background task from main.py."""
