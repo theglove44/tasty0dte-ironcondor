@@ -37,10 +37,12 @@ EXPANSION_THRESHOLD = 0.10  # candle body >= 10% of ORB range
 BREAKOUT_TIMEOUT = time(16, 0)  # noon ET = 16:00 UK (US DST active, UK still GMT)
 
 # Trade parameters
-TARGET_DELTA = 0.20
+TARGET_CREDIT = 1.00
+MIN_CREDIT = 0.50
+MAX_CREDIT = 2.00
 SPREAD_WIDTH = 5
-MIN_CREDIT = 0.80
-MAX_CREDIT = 1.50
+MIN_DELTA = 0.15
+MAX_DELTA = 0.35
 PROFIT_TARGET_PCT = 0.50
 STOP_LOSS_MULT = 2.0
 
@@ -311,12 +313,18 @@ async def _monitor_for_breakout(session: Session, orb: dict) -> dict | None:
 
 
 async def _find_credit_spread_legs(session: Session, options_list: list,
-                                    side: str, delta: float, width: float) -> dict | None:
-    """Find legs for a credit spread.
+                                    side: str, width: float) -> dict | None:
+    """Find credit spread legs targeting ~TARGET_CREDIT.
+
+    Fetches Greeks for the chain, filters candidates between MIN_DELTA and
+    MAX_DELTA, batch-fetches mark prices, then picks the pair whose credit
+    is closest to TARGET_CREDIT.
 
     side: 'put' for put credit spread, 'call' for call credit spread
-    Returns dict with short/long leg info, or None on failure.
+    Returns dict with short/long leg info and prices pre-populated, or None.
     """
+    from tastytrade.market_data import get_market_data_by_type
+
     greeks = await strategy_mod.get_greeks_for_chain(session, options_list)
     if not greeks:
         logger.error("No Greeks data for credit spread leg selection")
@@ -328,29 +336,85 @@ async def _find_credit_spread_legs(session: Session, options_list: list,
         if not puts:
             logger.error("No puts available for put credit spread")
             return None
-        # Sell ~delta put, buy put $width lower
-        short_leg = min(puts, key=lambda x: abs(x['delta'] + delta))
-        long_leg = min(puts, key=lambda p: abs(p['strike'] - (short_leg['strike'] - width)),
-                       default=None)
-        if not long_leg:
-            logger.error("Could not find long put wing")
-            return None
-        return {'short': short_leg, 'long': long_leg, 'side': 'put'}
-
+        # Candidates: puts with absolute delta between MIN_DELTA and MAX_DELTA
+        viable = [p for p in puts if MIN_DELTA <= abs(p['delta']) <= MAX_DELTA]
     elif side == 'call':
         if not calls:
             logger.error("No calls available for call credit spread")
             return None
-        # Sell ~delta call, buy call $width higher
-        short_leg = min(calls, key=lambda x: abs(x['delta'] - delta))
-        long_leg = min(calls, key=lambda c: abs(c['strike'] - (short_leg['strike'] + width)),
-                       default=None)
-        if not long_leg:
-            logger.error("Could not find long call wing")
-            return None
-        return {'short': short_leg, 'long': long_leg, 'side': 'call'}
+        viable = [c for c in calls if MIN_DELTA <= abs(c['delta']) <= MAX_DELTA]
+    else:
+        return None
 
-    return None
+    if not viable:
+        logger.error(f"No {side} options between {MIN_DELTA}-{MAX_DELTA} delta")
+        return None
+
+    # Build candidate pairs (short + long wing)
+    chain = puts if side == 'put' else calls
+    pairs = []
+    for short_leg in viable:
+        if side == 'put':
+            target_strike = short_leg['strike'] - width
+        else:
+            target_strike = short_leg['strike'] + width
+        long_leg = min(chain, key=lambda x: abs(x['strike'] - target_strike), default=None)
+        if not long_leg or long_leg['strike'] == short_leg['strike']:
+            continue
+        pairs.append((short_leg, long_leg))
+
+    if not pairs:
+        logger.error("Could not build any candidate spread pairs")
+        return None
+
+    # Batch-fetch mark prices for all unique candidate symbols
+    all_occ = set()
+    for short_leg, long_leg in pairs:
+        all_occ.add(short_leg['occ_symbol'])
+        all_occ.add(long_leg['occ_symbol'])
+
+    try:
+        market_data = await strategy_mod._unwrap_awaitable(
+            get_market_data_by_type(session, options=list(all_occ))
+        )
+        md_by_symbol = {md.symbol: md for md in market_data}
+    except Exception as e:
+        logger.error(f"REST price fetch failed: {type(e).__name__}: {e}")
+        return None
+
+    # Score each pair by distance from TARGET_CREDIT
+    best = None
+    best_diff = float('inf')
+    for short_leg, long_leg in pairs:
+        short_md = md_by_symbol.get(short_leg['occ_symbol'])
+        long_md = md_by_symbol.get(long_leg['occ_symbol'])
+        if not short_md or not long_md:
+            continue
+        short_price = float(short_md.mark) if short_md.mark else 0
+        long_price = float(long_md.mark) if long_md.mark else 0
+        if short_price <= 0 or long_price <= 0:
+            continue
+        credit = short_price - long_price
+        if credit < MIN_CREDIT or credit > MAX_CREDIT:
+            continue
+        diff = abs(credit - TARGET_CREDIT)
+        if diff < best_diff:
+            best_diff = diff
+            short_copy = dict(short_leg)
+            long_copy = dict(long_leg)
+            short_copy['price'] = short_price
+            long_copy['price'] = long_price
+            best = {'short': short_copy, 'long': long_copy, 'side': side, 'credit': credit}
+
+    if best:
+        logger.info(f"Selected {side} spread: short delta={best['short']['delta']:.2f} "
+                    f"strike={best['short']['strike']}, credit=${best['credit']:.2f} "
+                    f"(target=${TARGET_CREDIT:.2f})")
+    else:
+        logger.warning(f"No {side} spread found with credit between "
+                       f"${MIN_CREDIT:.2f}-${MAX_CREDIT:.2f}")
+
+    return best
 
 
 async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
@@ -368,10 +432,12 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
     else:
         side = 'call'
 
-    spread = await _find_credit_spread_legs(session, exp, side, TARGET_DELTA, SPREAD_WIDTH)
+    spread = await _find_credit_spread_legs(session, exp, side, SPREAD_WIDTH)
     if not spread:
-        logger.warning(f"Could not find {side} credit spread legs. Skipping.")
+        logger.warning(f"Could not find {side} credit spread with acceptable premium. Skipping.")
         return
+
+    credit = round(spread['credit'], 2)
 
     # Build 4-leg dict (NONE for unused side)
     none_leg = {'symbol': 'NONE', 'occ_symbol': 'NONE', 'strike': 0, 'delta': 0, 'price': 0}
@@ -390,29 +456,6 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
             'short_put': dict(none_leg),
             'long_put': dict(none_leg),
         }
-
-    # Fetch live prices for active legs
-    active_legs = {k: v for k, v in legs.items() if v['symbol'] != 'NONE'}
-    await strategy_mod._fetch_leg_prices(session, active_legs)
-    # Copy prices back
-    for k, v in active_legs.items():
-        legs[k] = v
-
-    short_price = legs[f'short_{side}']['price']
-    long_price = legs[f'long_{side}']['price']
-
-    if short_price <= 0 or long_price <= 0:
-        logger.warning(f"Missing price data: short={short_price}, long={long_price}. Skipping.")
-        return
-
-    credit = round(short_price - long_price, 2)
-
-    if credit < MIN_CREDIT:
-        logger.info(f"Premium too low: ${credit:.2f} < ${MIN_CREDIT}. Skipping.")
-        return
-    if credit > MAX_CREDIT:
-        logger.info(f"Premium too high: ${credit:.2f} > ${MAX_CREDIT}. Skipping.")
-        return
 
     buying_power = (SPREAD_WIDTH - credit) * 100
     profit_target = credit * PROFIT_TARGET_PCT
