@@ -176,18 +176,24 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         profit_target = credit * profit_target_pct
         
         strategy_id = _build_strategy_id(strat_name, trigger_time)
-        
+
+        # Capture SPX spot and short delta for analysis logging
+        spx_spot = await strategy.get_spx_spot(session)
+        short_call_delta = abs(legs['short_call'].get('delta', 0))
+        short_put_delta = abs(legs['short_put'].get('delta', 0))
+        short_delta = max(short_call_delta, short_put_delta)
+
         # Log trade
         notes = f"0DTE {strat_name} | {notes_extra}" if notes_extra else None
         trade_logger.log_trade_entry(legs, credit, bp, profit_target, iv_rank,
                                      strategy_name=strat_name, strategy_id=strategy_id,
-                                     notes=notes)
+                                     notes=notes,
+                                     short_delta=short_delta, spx_spot=spx_spot)
         logger.info(f"[{strat_name}] Trade logged. Credit: ${credit:.2f}, IV Rank: {iv_rank}")
 
         # Discord notification
         if discord_notify:
             try:
-                spx_spot = await strategy.get_spx_spot(session)
                 credit_pct = (credit / width) * 100 if width > 0 else 0
                 profit_target_debit = credit - profit_target
 

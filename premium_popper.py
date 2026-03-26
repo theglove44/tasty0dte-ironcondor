@@ -462,6 +462,8 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
     stop_loss = credit * STOP_LOSS_MULT
 
     iv_rank = await strategy_mod.fetch_spx_iv_rank(session)
+    spx_spot = await strategy_mod.get_spx_spot(session)
+    short_delta = abs(spread['short']['delta'])
 
     now = _now_uk()
     strategy_id = f"PP-ORB-{now.strftime('%H%M')}"
@@ -472,7 +474,8 @@ async def _execute_trade(session: Session, breakout: dict, orb: dict) -> None:
     trade_logger.log_trade_entry(
         legs, credit, buying_power, profit_target, iv_rank,
         strategy_name="Premium Popper", strategy_id=strategy_id,
-        notes=notes, stop_loss=stop_loss)
+        notes=notes, stop_loss=stop_loss,
+        short_delta=short_delta, spx_spot=spx_spot)
 
     logger.info(f"Premium Popper trade logged: {side} credit spread, "
                 f"credit=${credit:.2f}, stop=${stop_loss:.2f}")

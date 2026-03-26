@@ -11,7 +11,8 @@ HEADER = [
     "Date", "Entry Time", "Symbol", "Strategy", "StrategyId",
     "Short Call", "Long Call", "Short Put", "Long Put",
     "Credit Collected", "Buying Power", "Profit Target", "Stop Loss",
-    "Status", "Exit Time", "Exit P/L", "Notes", "IV Rank"
+    "Status", "Exit Time", "Exit P/L", "Notes", "IV Rank",
+    "Short Delta", "SPX Spot"
 ]
 
 def init_log_file():
@@ -37,9 +38,11 @@ def init_log_file():
         missing_iv = "IV Rank" not in headers
         missing_id = "StrategyId" not in headers
         missing_stop_loss = "Stop Loss" not in headers
+        missing_delta = "Short Delta" not in headers
+        missing_spot = "SPX Spot" not in headers
 
-        if missing_strategy or missing_iv or missing_id or missing_stop_loss:
-            logger.info(f"Migrating CSV. Missing Strat: {missing_strategy}, IV: {missing_iv}, ID: {missing_id}, StopLoss: {missing_stop_loss}")
+        if missing_strategy or missing_iv or missing_id or missing_stop_loss or missing_delta or missing_spot:
+            logger.info(f"Migrating CSV. Missing Strat: {missing_strategy}, IV: {missing_iv}, ID: {missing_id}, StopLoss: {missing_stop_loss}, Delta: {missing_delta}, Spot: {missing_spot}")
             migrate_csv(headers)
 
 def migrate_csv(old_headers):
@@ -113,27 +116,29 @@ def migrate_csv(old_headers):
         writer.writerows(new_rows)
     logger.info("Migration complete.")
 
-def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id="", notes=None, stop_loss=""):
+def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, strategy_name="20 Delta", strategy_id="", notes=None, stop_loss="", short_delta="", spx_spot=""):
     init_log_file()
 
     with open(LOG_FILE, mode='a', newline='') as file:
         ivr_val = float(iv_rank)
         # Normalize if it looks like a ratio (e.g. 0.15 -> 15.0)
-        # But be careful if IVR is actually < 1.0 (e.g. 0.5). 
+        # But be careful if IVR is actually < 1.0 (e.g. 0.5).
         # Usually IVR is 0-100. If it's consistently < 1 across the board we assume ratio.
         # Ideally rely on knowledge of source. Tasty API usually gives 0-100 string or decimal.
         # But previous data showed 0.126... which implies ratio.
         # Let's assume if it is <= 1.0 and > 0, it is a ratio.
-        # However, IVR can naturally be 0.5 (percentile). 
+        # However, IVR can naturally be 0.5 (percentile).
         # A safer bet might be: if we see values > 1 in the wild, the source is 0-100.
-        # If the source is `metrics[0].implied_volatility_index_rank`, Tasty documentation says it's 0-100? 
-        # Looking at previous CSV data: "13.54%" and "0.126410256". 
+        # If the source is `metrics[0].implied_volatility_index_rank`, Tasty documentation says it's 0-100?
+        # Looking at previous CSV data: "13.54%" and "0.126410256".
         # 0.126... is clearly 12.6%.
         if 0 < ivr_val <= 1.0:
              ivr_val *= 100.0
-             
+
         writer = csv.writer(file)
         stop_loss_str = f"{float(stop_loss):.2f}" if stop_loss else ""
+        delta_str = f"{float(short_delta):.2f}" if short_delta else ""
+        spot_str = f"{float(spx_spot):.2f}" if spx_spot else ""
         writer.writerow([
             datetime.now().date(),
             datetime.now().strftime("%H:%M:%S"),
@@ -152,5 +157,7 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             "",
             "",
             notes or f"0DTE {strategy_name}",
-            f"{ivr_val:.2f}"
+            f"{ivr_val:.2f}",
+            delta_str,
+            spot_str
         ])
