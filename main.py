@@ -27,11 +27,6 @@ try:
 except Exception:
     discord_notify = None
 
-try:
-    from local import x_notify
-except Exception:
-    x_notify = None
-
 # === LOGGING ===
 logging.basicConfig(
     level=logging.INFO,
@@ -212,9 +207,6 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
                     iv_rank=iv_rank
                 )
                 discord_notify.send_discord_webhook(payload)
-                
-                if x_notify:
-                    x_notify.post_trade_update(strat_name, float(credit), spx_spot, iv_rank)
             except Exception as e:
                 logger.warning(f"[{strat_name}] Notification failed: {e}")
 

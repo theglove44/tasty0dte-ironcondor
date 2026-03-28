@@ -370,17 +370,28 @@ async def _fetch_spx_close_once(session: Session, timeout_s: int = 10) -> float 
 async def get_spx_close(session: Session, timeout_s: int = 10, retries: int = 3) -> float | None:
     """
     Fetch SPX closing price with multiple fallback strategies:
-    1. Try dxFeed Summary event (day_close_price)
-    2. Fall back to cached price from market hours
-    
-    Args:
-        session: Tastytrade session
-        timeout_s: Timeout for each attempt
-        retries: Number of retry attempts
+    1. REST API (get_market_data_by_type) — reliable after hours
+    2. dxFeed Summary event (day_close_price)
+    3. Fall back to cached price from market hours
     """
-    import asyncio
-    
-    # Strategy 1: Try dxFeed Summary (only 1 attempt since it's usually empty after hours)
+    # Strategy 1: REST API — works reliably after market close
+    for attempt in range(retries):
+        try:
+            market_data = await _unwrap_awaitable(
+                get_market_data_by_type(session, indices=["SPX"])
+            )
+            if market_data:
+                md = market_data[0]
+                price = md.day_close or md.close or md.last
+                if price and float(price) > 0:
+                    logger.info(f"SPX close from REST API: {float(price)}")
+                    return float(price)
+                logger.warning(f"REST returned no usable close price (day_close={md.day_close}, close={md.close}, last={md.last})")
+        except Exception as e:
+            error_detail = _unwrap_exception(e)
+            logger.warning(f"REST SPX close attempt {attempt + 1}/{retries} failed: {error_detail}")
+
+    # Strategy 2: Try dxFeed Summary (fallback)
     try:
         result = await _fetch_spx_close_once(session, timeout_s=5)
         if result:
@@ -389,14 +400,14 @@ async def get_spx_close(session: Session, timeout_s: int = 10, retries: int = 3)
     except Exception as e:
         error_detail = _unwrap_exception(e)
         logger.warning(f"dxFeed Summary failed: {error_detail}")
-    
-    # Strategy 2: Use cached price from market hours
+
+    # Strategy 3: Use cached price from market hours (last resort)
     cached = get_cached_spx_price()
     if cached:
-        logger.info(f"SPX close from cache: {cached}")
+        logger.warning(f"SPX close from cache (last resort): {cached}")
         return cached
-    
-    logger.error("Could not get SPX close from dxFeed or cache")
+
+    logger.error("Could not get SPX close from REST, dxFeed, or cache")
     return None
 
 

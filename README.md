@@ -28,19 +28,16 @@ The main runtime loop is in `main.py`, with strategy selection in `strategy.py`,
 
 ## Current strategy set
 
-The current codebase includes these strategies:
-
-| Code | Strategy | Structure | Entry windows (UK) | Profit target |
+| Code | Strategy | Structure | Entry window (UK) | Profit target |
 |---|---|---|---|---:|
-| `IC-20D` | 20 Delta | Iron Condor | 13:45, 14:30 | 25% |
-| `IC-30D` | 30 Delta | Iron Condor | scheduled in main cycle | 25% |
 | `IF-V1` | Iron Fly V1 | Iron Fly | 14:00 | 10% |
 | `IF-V2` | Iron Fly V2 | Iron Fly | 14:00 | 20% |
 | `IF-V3` | Iron Fly V3 | Iron Fly | 14:30 | 10% |
 | `IF-V4` | Iron Fly V4 | Iron Fly | 14:30 | 20% |
-| `GF-20D` | Gap Filter 20D | Iron Condor | 14:00, 14:30 | 25% |
 | `DY-0D` | Dynamic 0DTE | Adaptive IC / IF | 14:00 | 20% |
-| `PP-ORB` | Premium Popper | ORB credit strategy | 13:45 launcher | 50% |
+| `PP-ORB` | Premium Popper | ORB credit spread | background task | 50% |
+
+> Entry windows shown are for US DST period (market opens 13:30 UK). When UK clocks change, add 1 hour.
 
 ### Dynamic 0DTE
 
@@ -49,9 +46,17 @@ The `DY-0D` strategy checks the SPX move from the open and switches structure ba
 - stronger/flat early move -> iron condor configuration
 - weaker move -> iron fly configuration
 
-### Gap Filter 20D
+### Premium Popper
 
-The `GF-20D` strategy uses the overnight SPX gap to decide whether to trade. In the current implementation it is intended to trade large up-gap or flat-gap conditions and skip weaker / down-gap conditions.
+The `PP-ORB` strategy monitors the Opening Range Breakout and sells a credit spread against the breakout direction. It dynamically scans deltas 0.15-0.35 to find the spread closest to a $1.00 target credit.
+
+### Removed strategies
+
+The following strategies were removed after a 510-trade review in March 2026:
+
+- **20 Delta IC** (`IC-20D`): negative P/L despite 90% win rate (win/loss ratio 0.09)
+- **30 Delta IC** (`IC-30D`): deteriorating monthly performance
+- **Gap Filter 20D** (`GF-20D`): catastrophic tail losses
 
 ## Repository layout
 
@@ -147,7 +152,7 @@ Example:
 | `stdout.log` | standard output from helper scripts |
 | `stderr.log` | error output from helper scripts |
 | `cron.log` | cron start / stop events |
-| `.spx_cache.json` | cached SPX value used as a settlement fallback |
+| `.spx_cache.json` | cached SPX value used as a last-resort settlement fallback |
 
 Useful commands:
 
