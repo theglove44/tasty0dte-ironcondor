@@ -6,7 +6,7 @@ then watches for the first breakout candle close outside the range.
 On breakout, enters a credit spread opposite the breakout direction.
 
 Lifecycle (US DST active, UK still GMT):
-  13:30–13:50 UK: Collect ORB (poll SPX spot price, build 5-min candles)
+  14:30–14:50 UK: Collect ORB (poll SPX spot price, build 5-min candles)
   13:50–16:00 UK: Monitor for breakout (5-min candle closes)
   On breakout:   Execute put credit spread (bullish) or call credit spread (bearish)
   16:00 UK:      Timeout if no breakout (noon ET)
@@ -203,9 +203,9 @@ async def _poll_candles(session: Session, start_time: datetime,
 
 
 async def _collect_opening_range(session: Session) -> dict | None:
-    """Build ORB from 4 × 5-min candles starting at market open (13:30 UK)."""
+    """Build ORB from 4 × 5-min candles starting at market open (14:30 UK)."""
     now = _now_uk()
-    orb_start = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    orb_start = now.replace(hour=14, minute=30, second=0, microsecond=0)
     orb_end = orb_start + timedelta(minutes=ORB_DURATION_MINUTES)
 
     # If we're past ORB window already, can't collect
@@ -216,10 +216,10 @@ async def _collect_opening_range(session: Session) -> dict | None:
     # Wait until ORB start if early
     if now < orb_start:
         wait_secs = (orb_start - now).total_seconds()
-        logger.info(f"Waiting {wait_secs:.0f}s for ORB start (13:30 UK)")
+        logger.info(f"Waiting {wait_secs:.0f}s for ORB start (14:30 UK)")
         await asyncio.sleep(wait_secs)
 
-    logger.info("Starting ORB collection (13:30-13:50 UK)...")
+    logger.info("Starting ORB collection (14:30-14:50 UK)...")
     candles = await _poll_candles(session, orb_start, orb_end,
                                   candle_minutes=ORB_CANDLE_MINUTES)
 

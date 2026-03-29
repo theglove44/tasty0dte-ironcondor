@@ -284,21 +284,21 @@ def get_market_session() -> dict:
     if weekday >= 5:
         return {"status": "Closed", "detail": "Weekend", "countdown": ""}
 
-    market_open = now.replace(hour=13, minute=30, second=0, microsecond=0)
-    market_close = now.replace(hour=20, minute=0, second=0, microsecond=0)
+    market_open = now.replace(hour=14, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=21, minute=0, second=0, microsecond=0)
 
     if now < market_open:
         delta = market_open - now
         return {
             "status": "Pre-Market",
-            "detail": "Opens at 13:30 UK",
+            "detail": "Opens at 14:30 UK",
             "countdown": _format_delta(delta),
         }
     elif now <= market_close:
         delta = market_close - now
         return {
             "status": "Open",
-            "detail": "Closes at 20:00 UK",
+            "detail": "Closes at 21:00 UK",
             "countdown": _format_delta(delta),
         }
     else:

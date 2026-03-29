@@ -22,9 +22,9 @@ UK_TZ = pytz.timezone('Europe/London')
 
 
 async def fetch_orb_from_candles(session: Session) -> dict | None:
-    """Fetch 5-min candles from 13:30-13:50 UK today via DXLink Candle events."""
+    """Fetch 5-min candles from 14:30-14:50 UK today via DXLink Candle events."""
     now = datetime.now(UK_TZ)
-    orb_start = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    orb_start = now.replace(hour=14, minute=30, second=0, microsecond=0)
 
     candles = []
 
@@ -42,7 +42,7 @@ async def fetch_orb_from_candles(session: Session) -> dict | None:
             for e in events:
                 if not isinstance(e, Candle):
                     continue
-                # Filter to only the 13:30-13:50 window (4 candles)
+                # Filter to only the 14:30-14:50 window (4 candles)
                 if e.time and e.open and e.high and e.low and e.close:
                     candle_time = datetime.fromtimestamp(e.time / 1000, tz=UK_TZ)
                     if orb_start <= candle_time < orb_start + timedelta(minutes=20):

@@ -11,7 +11,7 @@ STRATEGY_CONFIGS = [
         'type': 'iron_condor',
         'target_delta': 0.20,
         'profit_target_pct': 0.25,
-        'allowed_times': ["13:45", "14:30"],
+        'allowed_times': ["14:45", "15:30"],
     },
     {
         'name': "30 Delta",
@@ -20,7 +20,7 @@ STRATEGY_CONFIGS = [
         'target_delta': 0.30,
         # In main.py this strategy has no allowed_times override,
         # so it runs at all scheduler trigger times.
-        'allowed_times': ["13:45", "14:00", "14:30"],
+        'allowed_times': ["14:45", "15:00", "15:30"],
         'profit_target_pct': 0.25,
     },
     {
@@ -30,7 +30,7 @@ STRATEGY_CONFIGS = [
         'target_delta': 0.50,
         'profit_target_pct': 0.10,
         'wing_width': 10,
-        'allowed_times': ["14:00"],
+        'allowed_times': ["15:00"],
     },
     {
         'name': "Iron Fly V2",
@@ -39,7 +39,7 @@ STRATEGY_CONFIGS = [
         'target_delta': 0.50,
         'profit_target_pct': 0.20,
         'wing_width': 10,
-        'allowed_times': ["14:00"],
+        'allowed_times': ["15:00"],
     },
     {
         'name': "Iron Fly V3",
@@ -48,7 +48,7 @@ STRATEGY_CONFIGS = [
         'target_delta': 0.50,
         'profit_target_pct': 0.10,
         'wing_width': 10,
-        'allowed_times': ["14:30"],
+        'allowed_times': ["15:30"],
     },
     {
         'name': "Iron Fly V4",
@@ -57,7 +57,7 @@ STRATEGY_CONFIGS = [
         'target_delta': 0.50,
         'profit_target_pct': 0.20,
         'wing_width': 10,
-        'allowed_times': ["14:30"],
+        'allowed_times': ["15:30"],
     },
     {
         'name': "Gap Filter 20D",
@@ -65,7 +65,7 @@ STRATEGY_CONFIGS = [
         'type': 'iron_condor',
         'target_delta': 0.20,
         'profit_target_pct': 0.25,
-        'allowed_times': ["14:00", "14:30"],
+        'allowed_times': ["15:00", "15:30"],
         'overnight_filter': True,
     },
     {
@@ -74,7 +74,7 @@ STRATEGY_CONFIGS = [
         'type': 'dynamic_0dte',
         'target_delta': "adaptive",
         'profit_target_pct': 0.20,
-        'allowed_times': ["14:00"],
+        'allowed_times': ["15:00"],
         'move_threshold': -0.1,
         'condor_delta': 0.20,
         'condor_wing_width': 20,
@@ -87,12 +87,12 @@ STRATEGY_CONFIGS = [
         'type': 'premium_popper',
         'target_delta': 0.20,
         'profit_target_pct': 0.50,
-        'allowed_times': ["13:45"],
+        'allowed_times': ["14:45"],
     },
 ]
 
 # Time exit rules from monitor.py
-TIME_EXIT = "17:00 UK (30 Delta + Iron Fly), 18:50 UK (Premium Popper), 19:55 UK (Dynamic 0DTE)"
+TIME_EXIT = "18:00 UK (30 Delta + Iron Fly), 19:50 UK (Premium Popper), 20:55 UK (Dynamic 0DTE)"
 
 # Wing width default for iron condors
 IC_WING_WIDTH = 20

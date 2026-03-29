@@ -414,21 +414,21 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             
             is_time_exit = False
             time_exit_label = ""
-            # Time exit at 17:00 UK for 30 Delta and Iron Flies
+            # Time exit at 18:00 UK for 30 Delta and Iron Flies
             if strategy_name in ["30 Delta", "Iron Fly V1", "Iron Fly V2", "Iron Fly V3", "Iron Fly V4"]:
-                if now_uk.time() >= time(17, 0):
+                if now_uk.time() >= time(18, 0):
                     is_time_exit = True
-                    time_exit_label = "17:00"
-            # Time exit at 19:55 UK for Dynamic 0DTE
+                    time_exit_label = "18:00"
+            # Time exit at 20:55 UK for Dynamic 0DTE
             elif strategy_name == "Dynamic 0DTE":
-                if now_uk.time() >= time(19, 55):
+                if now_uk.time() >= time(20, 55):
                     is_time_exit = True
-                    time_exit_label = "19:55"
-            # Time exit at 18:50 UK for Premium Popper (2:50pm ET during DST gap)
+                    time_exit_label = "20:55"
+            # Time exit at 19:50 UK for Premium Popper
             elif strategy_name == "Premium Popper":
-                if now_uk.time() >= time(18, 50):
+                if now_uk.time() >= time(19, 50):
                     is_time_exit = True
-                    time_exit_label = "18:50"
+                    time_exit_label = "19:50"
             
             status_lines.append(f"Trade {index} [{description}]: Credit={initial_credit:.2f}, Current Debit={debit_to_close:.2f}, P/L={current_profit:.2f}, Target={profit_target:.2f}{iv_rank_str}")
 
@@ -479,7 +479,7 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
 async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.csv"):
     """
     Checks for End-Of-Day expiration.
-    If time is past market close (20:00 UK), expire OPEN trades.
+    If time is past market close (21:00 UK), expire OPEN trades.
     """
     if not is_market_closed():
         return
@@ -582,9 +582,9 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
 
 def is_market_closed():
     """
-    Returns True if current UK time is >= 20:00 (Market Close).
-    US DST active, UK still GMT — market closes 1hr earlier.
+    Returns True if current UK time is >= 21:00 (Market Close).
+    Both US and UK on summer time — standard offset.
     """
     uk_tz = pytz.timezone('Europe/London')
     now_uk = datetime.now(uk_tz)
-    return now_uk.hour >= 20
+    return now_uk.hour >= 21

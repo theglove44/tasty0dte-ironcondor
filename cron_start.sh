@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Cron job: Start bot before market open
-# Runs at 13:30 UK (15 mins before first entry) — US DST active
+# Runs at 14:30 UK (15 mins before first entry) — both US+UK DST active
 #
 cd "$(dirname "$0")"
 

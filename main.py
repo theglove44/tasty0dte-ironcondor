@@ -232,7 +232,7 @@ async def main():
         return
 
     uk_tz = pytz.timezone('Europe/London')
-    target_times = [time(14, 0), time(14, 30)]
+    target_times = [time(15, 0), time(15, 30)]
     
     logger.info(f"Entry times: {[t.strftime('%H:%M') for t in target_times]} UK")
     logger.info("Entering main loop. Will run until stopped.")
@@ -254,9 +254,9 @@ async def main():
                 last_date = today
                 logger.info(f"New trading day: {today}")
 
-            # Launch Premium Popper at 13:30 UK (market open) to collect ORB
+            # Launch Premium Popper at 14:30 UK (market open) to collect ORB
             current_time = now_uk.time()
-            if (current_time.hour == 13 and current_time.minute == 30 and not popper_started_today):
+            if (current_time.hour == 14 and current_time.minute == 30 and not popper_started_today):
                 popper_started_today = True
                 logger.info("Launching Premium Popper ORB20 background task...")
                 asyncio.create_task(premium_popper.run_premium_popper(session))
