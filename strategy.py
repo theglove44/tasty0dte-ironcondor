@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.instruments import NestedOptionChain, Option
 from tastytrade.dxfeed import Summary
@@ -496,9 +496,11 @@ async def _fetch_leg_prices(session: Session, legs: dict):
         logger.error(f"REST market data fetch failed: {type(e).__name__}: {e}")
         return
 
+    now = datetime.now(timezone.utc)
     for k in legs:
         occ = legs[k].get('occ_symbol', '')
         price = 0.0
+        updated_at = None
         if occ in md_by_symbol:
             md = md_by_symbol[occ]
             if md.mark is not None:
@@ -507,9 +509,24 @@ async def _fetch_leg_prices(session: Session, legs: dict):
                 price = float(md.mid)
             elif md.bid is not None and md.ask is not None:
                 price = float((md.bid + md.ask) / 2)
+            updated_at = getattr(md, 'updated_at', None)
         if price == 0.0:
             logger.warning(f"No price data for {occ}")
         legs[k]['price'] = price
+        legs[k]['price_updated_at'] = updated_at
+
+        # Quote-age staleness warning: during fast markets, REST marks can lag
+        # by several seconds and drift from put-call parity (see 2026-04-06 V1 bug).
+        if updated_at is not None:
+            try:
+                ua = updated_at if updated_at.tzinfo else updated_at.replace(tzinfo=timezone.utc)
+                age_s = (now - ua).total_seconds()
+                if age_s > 5.0:
+                    logger.warning(
+                        f"Stale REST mark for {occ}: age={age_s:.1f}s mark={price}"
+                    )
+            except Exception as e:
+                logger.debug(f"Quote-age check failed for {occ}: {type(e).__name__}: {e}")
 
 
 async def find_iron_condor_legs(session: Session, options_list: list, target_delta: float = 0.20):
@@ -596,3 +613,66 @@ async def find_iron_fly_legs(session: Session, options_list: list, target_delta:
     await _fetch_leg_prices(session, legs)
     logger.info(f"Selected Iron Fly Legs ({wing_width} wide) at {atm_strike}: {legs}")
     return legs
+
+
+# --- Credit sanity validation ---------------------------------------------
+#
+# After the 2026-04-06 Iron Fly V1 incident we reject trades whose entry
+# marks violate economic reality. Two guards:
+#
+#   1. Max-credit: a vertical/fly cannot credit more than its wing width
+#      (that would be a riskless arbitrage). We require a 0.25 cushion.
+#
+#   2. Put-call parity: for ATM iron flies (short call strike == short put
+#      strike), (C - P) must ≈ (spot - strike). A drift larger than $2
+#      means one leg's REST mark is stale relative to the other — which
+#      inflates the credit and produces phantom profit-target hits when
+#      the mark normalizes later.
+#
+# See CLAUDE.md "Log Hierarchy" and the 2026-04-06 bug note in
+# memory/projects/0dte-bot.md for context.
+
+PARITY_TOLERANCE = 2.00          # dollars
+MAX_CREDIT_CUSHION = 0.25        # dollars below wing width
+
+
+def validate_credit_sanity(
+    legs: dict,
+    credit: float,
+    wing_width: float,
+    spx_spot: float | None,
+    strat_name: str = "",
+) -> tuple[bool, str]:
+    """
+    Return (is_valid, reason). `is_valid=False` means the caller should
+    skip the trade and log `reason`.
+    """
+    # 1. Max-credit / no-arbitrage guard
+    if wing_width > 0 and credit >= wing_width - MAX_CREDIT_CUSHION:
+        return False, (
+            f"credit ${credit:.2f} >= wing_width ${wing_width:.2f} - "
+            f"${MAX_CREDIT_CUSHION:.2f} (arbitrage territory, impossible fill)"
+        )
+
+    # 2. Put-call parity (ATM iron fly only)
+    try:
+        sc_strike = float(legs['short_call']['strike'])
+        sp_strike = float(legs['short_put']['strike'])
+        sc_price = float(legs['short_call']['price'])
+        sp_price = float(legs['short_put']['price'])
+    except (KeyError, TypeError, ValueError):
+        return True, "OK (parity check skipped — missing leg data)"
+
+    if sc_strike == sp_strike and spx_spot is not None:
+        observed = sc_price - sp_price
+        expected = float(spx_spot) - sc_strike
+        drift = abs(observed - expected)
+        if drift > PARITY_TOLERANCE:
+            return False, (
+                f"put-call parity violation at strike {sc_strike:.0f}: "
+                f"C-P={observed:+.2f} expected={expected:+.2f} "
+                f"drift=${drift:.2f} > ${PARITY_TOLERANCE:.2f} "
+                f"(stale REST mark during fast-moving market)"
+            )
+
+    return True, "OK"

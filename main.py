@@ -161,19 +161,30 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         # Calculate credit & risk
         credit = (legs['short_call']['price'] + legs['short_put']['price']) - \
                  (legs['long_call']['price'] + legs['long_put']['price'])
-        
+
         call_width = abs(float(legs['short_call']['strike']) - float(legs['long_call']['strike']))
         put_width = abs(float(legs['short_put']['strike']) - float(legs['long_put']['strike']))
         width = max(call_width, put_width)
-        
+
+        # Fetch SPX spot early — needed for sanity validation and later logging
+        spx_spot = await strategy.get_spx_spot(session)
+
+        # Sanity validation: reject trades with impossible credits or stale marks.
+        # See 2026-04-06 Iron Fly V1 phantom-fill incident.
+        is_valid, reason = strategy.validate_credit_sanity(
+            legs, credit, width, spx_spot, strat_name
+        )
+        if not is_valid:
+            logger.warning(f"[{strat_name}] REJECTED trade: {reason}. Skipping.")
+            continue
+
         risk = width - credit
         bp = risk * 100
         profit_target = credit * profit_target_pct
-        
+
         strategy_id = _build_strategy_id(strat_name, trigger_time)
 
-        # Capture SPX spot and short delta for analysis logging
-        spx_spot = await strategy.get_spx_spot(session)
+        # Short delta for analysis logging (spx_spot already fetched above)
         short_call_delta = abs(legs['short_call'].get('delta', 0))
         short_put_delta = abs(legs['short_put'].get('delta', 0))
         short_delta = max(short_call_delta, short_put_delta)
