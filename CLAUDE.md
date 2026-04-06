@@ -42,6 +42,15 @@
 - Use paper_trades.csv for all tracking
 - Credit-only strategies (no debit spreads)
 
+## DST / Time Change Checklist
+
+When updating times for DST shifts, audit **every** hardcoded time in the codebase — not just the obvious entry points. Use:
+1. `grep -rn "time(" *.py` — all `time()` objects (especially `STRATEGY_CONFIGS.allowed_times` vs `target_times`)
+2. `grep -rn "hour ==" *.py` — all hour comparisons (e.g. Premium Popper launch)
+3. Crontab (`crontab -l`), shell scripts, dashboard configs
+4. Cross-reference: if one time moves, all corresponding times must move together
+5. **Lesson (2026-03-30)**: `target_times` was updated but `allowed_times` in `STRATEGY_CONFIGS` was missed — silently skipped all Iron Fly + Dynamic trades for a full day
+
 ## Key Files
 
 - `main.py` — Entry point, CLI args
@@ -49,6 +58,48 @@
 - `monitor.py` — Position monitoring, profit targets, EOD
 - `paper_trades.csv` — Trade history
 - `.spx_cache.json` — SPX price cache for EOD settlement
+
+## Log Hierarchy (READ THIS BEFORE DIAGNOSING)
+
+**Before making any claim about bot health, read sources in this order and stop at the first one that answers the question. Do not guess from log filenames — most of them are noisy or unrelated to the trading bot.**
+
+### 1. Is the bot running?
+```
+ps aux | grep "main.py" | grep -v grep
+```
+PID + start time is ground truth. A running process means the bot is alive regardless of what any log says.
+
+### 2. What is it doing right now? (trusted, bot-owned)
+- **`stdout.log`** — live monitor loop; every ~16s prints open trades, current debit, P/L, target. If updating, the bot is streaming live quotes and healthy.
+- **`trade.log`** — structured INFO log from the bot itself: trade entries/exits, IV Rank, chain fetches, Greeks subscriptions, profit-target closes. **This is the authoritative bot log.** If trading logic broke, it's here.
+
+### 3. Did anything break today?
+```
+grep "^YYYY-MM-DD" trade.log | grep -iE "error|warning|exception|traceback|failed"
+```
+Always scope grep to today's date. Empty result = clean session.
+
+### 4. Persistent state
+- **`paper_trades.csv`** — source of truth for all trades (open + closed), P/L, strikes, credits
+- **`.spx_cache.json`** — last-known SPX spot (only used as EOD fallback per the 2026-03-28 fix)
+
+### 5. Logs to IGNORE or heavily discount
+These files look scary but are not the trading bot. Do not cite errors from them without first checking their mtime and purpose.
+
+- **`guard_stderr.log`** — raw unstamped curl errors from `market_session_guard.sh`, a 5-min cron watchdog that polls tastytrade's `/market-time` endpoint. **No timestamps**, so stale errors from days/weeks ago look "current". Not the bot. Transient Mac DNS/network hiccups accumulate here and are harmless — the guard retries on the next tick.
+- **`guard_stdout.log`** — the watchdog's heartbeat. Use THIS (not guard_stderr) to verify the guard sees the market as Open. Has timestamps.
+- **`stderr.log`** — historically duplicates trade.log INFO plus old warnings. Noisy, partially unstamped. Prefer `trade.log`.
+- **`cron.log`** — cron wrapper output, not bot logic.
+
+**Rule of thumb: if a log has no timestamps, treat it as untrusted context, not evidence.**
+
+### 6. Architecture layers (what talks to what)
+- `main.py` → schedules strategies, owns the SDK Session
+- `strategy.py` → fetches chain/Greeks/SPX spot, picks legs
+- `monitor.py` → the live-quote streaming loop that writes to `stdout.log`
+- `market_session_guard.sh` → independent shell watchdog, uses `curl` (NOT the bot's SDK session). Its failures do not affect the running bot.
+
+The bot uses the tastytrade Python SDK over a persistent authenticated HTTPS session — completely independent of the watchdog's curl polling. A curl timeout in the guard does not mean the bot lost its feed.
 
 ## Memory
 
