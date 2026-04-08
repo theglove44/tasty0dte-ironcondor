@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 import pytz
 
@@ -8,6 +8,10 @@ from orb_stacking.bar_fetcher import (
     is_garbage_bar,
     clean_and_sort,
     UK_TZ,
+    DEFAULT_INTERVAL,
+    DEFAULT_LOOKBACK_DAYS,
+    WARMUP_MIN_BARS,
+    BarFetcher,
 )
 
 
@@ -144,6 +148,78 @@ class TestRealisticDxLinkOutput(unittest.TestCase):
         # Latest values won
         self.assertEqual(by_time[1711805400000]['high'], 6411)
         self.assertEqual(by_time[1711805400000]['close'], 6374.5)
+
+
+class TestDefaultConstants(unittest.TestCase):
+    def test_default_interval_is_5m(self):
+        self.assertEqual(DEFAULT_INTERVAL, "5m")
+
+    def test_default_lookback_days_is_2(self):
+        self.assertEqual(DEFAULT_LOOKBACK_DAYS, 2)
+
+    def test_warmup_min_bars_is_30(self):
+        self.assertEqual(WARMUP_MIN_BARS, 30)
+
+# Test compatibility layer for async tests
+def test_async(coro):
+    """Decorator to run async tests."""
+    import asyncio
+    def wrapper(self):
+        return asyncio.run(coro(self))
+    return wrapper
+
+
+class TestFetchHistoryWithRetryAsync(unittest.TestCase):
+    """Async tests for fetch_history_with_retry."""
+
+    @test_async
+    async def test_returns_larger_result(self):
+        """If first fetch has < WARMUP_MIN_BARS, retry and return the larger result."""
+        fetcher = BarFetcher(symbol="SPX", interval="5m", lookback_days=2)
+
+        small_result = [
+            {'time': i, 'start': datetime.now(pytz.UTC), 'open': 100, 'high': 101, 'low': 99, 'close': 100}
+            for i in range(1, 6)
+        ]
+        large_result = [
+            {'time': i, 'start': datetime.now(pytz.UTC), 'open': 100, 'high': 101, 'low': 99, 'close': 100}
+            for i in range(1, 36)
+        ]
+
+        call_count = [0]
+
+        async def mock_fetch(session):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return small_result
+            else:
+                return large_result
+
+        fetcher.fetch_history = mock_fetch
+        session = MagicMock()
+
+        result = await fetcher.fetch_history_with_retry(session)
+        self.assertEqual(len(result), 35)
+        self.assertEqual(call_count[0], 2)
+
+    @test_async
+    async def test_degraded_path_returns_available(self):
+        """If both fetches return < WARMUP_MIN_BARS, return what we have + log warning."""
+        fetcher = BarFetcher(symbol="SPX", interval="5m", lookback_days=2)
+
+        both_small = [
+            {'time': i, 'start': datetime.now(pytz.UTC), 'open': 100, 'high': 101, 'low': 99, 'close': 100}
+            for i in range(1, 11)
+        ]
+
+        async def mock_fetch(session):
+            return both_small
+
+        fetcher.fetch_history = mock_fetch
+        session = MagicMock()
+
+        result = await fetcher.fetch_history_with_retry(session)
+        self.assertEqual(len(result), 10)
 
 
 if __name__ == '__main__':

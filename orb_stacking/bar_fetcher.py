@@ -1,10 +1,11 @@
 """
 SPX bar fetcher for ORB Stacking.
 
-Subscribes to DXLink Candle events with a historical start_time, dedupes by
-timestamp, filters out O=0 garbage bars, and exposes both:
+Subscribes to DXLink Candle events (5-minute bars) with a historical start_time,
+dedupes by timestamp, filters out O=0 garbage bars, and exposes both:
 
   - fetch_history(): one-shot historical batch (for indicator warmup)
+  - fetch_history_with_retry(): historical fetch with automatic retry if insufficient bars
   - stream_closed_bars(): async iterator of newly closed live bars
 
 Bar format: dict with keys {time, start, open, high, low, close}
@@ -25,9 +26,10 @@ from tastytrade.dxfeed import Candle
 UK_TZ = pytz.timezone('Europe/London')
 logger = logging.getLogger("orb-stacking-bars")
 
-DEFAULT_INTERVAL = "30m"
-DEFAULT_LOOKBACK_DAYS = 10
+DEFAULT_INTERVAL = "5m"
+DEFAULT_LOOKBACK_DAYS = 2
 WARMUP_LISTEN_SECONDS = 20
+WARMUP_MIN_BARS = 30
 
 
 def candle_to_bar(c: Candle) -> dict | None:
@@ -58,7 +60,7 @@ def clean_and_sort(bars_by_time: dict) -> list[dict]:
 
 
 class BarFetcher:
-    """Fetches and streams SPX bars from DXLink for the ORB Stacking strategy.
+    """Fetches and streams 5-minute SPX bars from DXLink for the ORB Stacking strategy.
 
     History and live streaming use SEPARATE DXLink connections so callers can
     warm up indicators synchronously, then start streaming when ready. ORB
@@ -112,6 +114,33 @@ class BarFetcher:
         else:
             logger.warning("No historical bars received")
         return bars
+
+    async def fetch_history_with_retry(self, session: Session) -> list[dict]:
+        """Fetch history once; if result has < WARMUP_MIN_BARS, retry once after a brief delay.
+
+        Returns the larger of the two results. Does NOT raise if both attempts are
+        below WARMUP_MIN_BARS; always returns whatever bars are available.
+        Logs a WARNING if the final result is still below threshold.
+        """
+        bars = await self.fetch_history(session)
+
+        if len(bars) >= WARMUP_MIN_BARS:
+            return bars
+
+        logger.warning(
+            f"First fetch returned only {len(bars)} bars (< {WARMUP_MIN_BARS}), retrying..."
+        )
+        await asyncio.sleep(2)
+        bars_retry = await self.fetch_history(session)
+
+        result = bars_retry if len(bars_retry) > len(bars) else bars
+
+        if len(result) < WARMUP_MIN_BARS:
+            logger.warning(
+                f"Only received {len(result)} bars after retry, needed {WARMUP_MIN_BARS}"
+            )
+
+        return result
 
     async def stream_closed_bars(self, session: Session) -> AsyncIterator[dict]:
         """Async iterator yielding each newly closed bar.
