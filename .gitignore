@@ -50,3 +50,7 @@ main.py.bak*
 dashboard.log
 dashboard.pid
 logs/
+
+# Historical SPX 5-min bar data (backtest fuel for ORB Stacking, ~71MB).
+# Read directly from docs/ by the Slice 13 backtester. Reference data, not source.
+docs/SPX 5 min*.txt
