@@ -11,7 +11,8 @@ class TestTimestampParsing(unittest.TestCase):
     def test_winter_gmt(self):
         from tools.backtest_orb_stacking import _parse_timestamp
 
-        ts = _parse_timestamp("04/01/2010", "14:35")
+        # 01/04/2010 = January 4 (MM/DD) — UK winter (GMT = UTC+0) → 14:35 UTC
+        ts = _parse_timestamp("01/04/2010", "14:35")
         self.assertEqual(ts.hour, 14)
         self.assertEqual(ts.minute, 35)
         self.assertEqual(ts.tzinfo, pytz.UTC)
@@ -19,7 +20,8 @@ class TestTimestampParsing(unittest.TestCase):
     def test_summer_bst(self):
         from tools.backtest_orb_stacking import _parse_timestamp
 
-        ts = _parse_timestamp("15/07/2015", "14:35")
+        # 07/15/2015 = July 15 (MM/DD) — UK summer (BST = UTC+1) → 13:35 UTC
+        ts = _parse_timestamp("07/15/2015", "14:35")
         self.assertEqual(ts.hour, 13)
         self.assertEqual(ts.minute, 35)
 

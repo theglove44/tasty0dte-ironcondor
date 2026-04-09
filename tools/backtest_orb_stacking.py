@@ -75,7 +75,7 @@ class SessionResult:
 
 
 def _parse_timestamp(date_str: str, time_str: str) -> Optional[datetime]:
-    naive = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M")
+    naive = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%Y %H:%M")
     try:
         localized = UK_TZ.localize(naive, is_dst=None)
     except pytz.AmbiguousTimeError:
