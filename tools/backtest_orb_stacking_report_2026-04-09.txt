@@ -1,0 +1,17 @@
+ORB Stacking Backtest — 21yr SPX 5m
+Sessions processed: 4085
+
+Permutation                              Days      %  Day-Fav
+--------------------------------------------------------------
+ORB20 break → HALF only                    16  0.4%   87.5%
+  + ORB60 confirms → PLUS                2214 54.2%   77.6%
+    + all closes aligned → DOUBLE         470 11.5%   92.8%
+ORB30 opposes                               6  0.1%   50.0%
+ORB60 opposes                             811 19.9%   34.6%
+ORB60 no breakout                         132  3.2%   83.3%
+No breakout before noon                   436 10.7%   16.1%
+--------------------------------------------------------------
+PLUS+DOUBLE (gate ≥ 78.0%)               2684         80.2%  PASS
+  DOUBLE (gate ≥ 88.0%)                   470         92.8%  PASS
+
+Gate: PASS (PLUS=80.2% ≥ 78.0%, DOUBLE=92.8% ≥ 88.0%)
