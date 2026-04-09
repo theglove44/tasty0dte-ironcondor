@@ -86,6 +86,10 @@ def _parse_timestamp(date_str: str, time_str: str) -> Optional[datetime]:
 
 
 def parse_csv_file(path: Path) -> Iterator[Bar]:
+    # CSV uses end-of-bar labeling: the timestamp is the bar's CLOSE time.
+    # OrbBuilder expects start-of-bar timestamps. Subtract one interval.
+    from datetime import timedelta
+    _interval = timedelta(minutes=5)
     with path.open("r", newline="") as fh:
         reader = csv.reader(fh)
         next(reader, None)
@@ -96,7 +100,7 @@ def parse_csv_file(path: Path) -> Iterator[Bar]:
             if ts is None:
                 continue
             yield Bar(
-                start=ts,
+                start=ts - _interval,
                 open=float(row[2]),
                 high=float(row[3]),
                 low=float(row[4]),
