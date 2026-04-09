@@ -39,7 +39,7 @@ class OrbTradeIntent:
     spread_side: str
     short_strike: float
     long_strike: float
-    expected_credit: float
+    expected_credit: Optional[float]
     stack_tier: str
     base_tier: str
     contracts: int

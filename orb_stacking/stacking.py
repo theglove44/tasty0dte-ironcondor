@@ -96,6 +96,22 @@ class StackingEngine:
     def direction(self) -> Optional[str]:
         return self._direction
 
+    @property
+    def orb_builder(self) -> OrbBuilder:
+        return self._orb_builder
+
+    @property
+    def orb20_breakout(self) -> Optional[Breakout]:
+        return self._orb20_breakout
+
+    @property
+    def orb30_breakout(self) -> Optional[Breakout]:
+        return self._orb30_breakout
+
+    @property
+    def orb60_breakout(self) -> Optional[Breakout]:
+        return self._orb60_breakout
+
     def on_closed_bar(self, bar: dict) -> list[StackingEvent]:
         events: list[StackingEvent] = []
 
