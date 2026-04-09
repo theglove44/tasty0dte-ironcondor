@@ -1,10 +1,11 @@
 # Tag N Turn → ORB Stacking — Source of Truth
 
 **Status:** Active calibration reference. All build work must conform to this document. If a piece of code disagrees with this doc, the code is wrong.
-**Last reconciled:** 2026-04-08
+**Last reconciled:** 2026-04-09
 **Owner thesis pivot:** The original Tag N Turn methodology (BB(30) tag + pulse bar + MACD-V Traffic Light + V-pattern + 5-factor scoring) is **shelved**. The package is being repurposed to implement **ORB Stacking** — the dominant edge surfaced by 21 years of SPX 5-min research.
 
 ### Changelog
+- **2026-04-09 (post-Slice 2):** Added the `bar_gap_during_lock` contract to §2.2 definitions. Codifies the Slice 2 decision that an ORB is skipped (not locked) whenever a bar at or past its lock boundary is observed without every required in-window bar present. Downstream slices (3–14) may rely on "locked OR skipped with reason — never indefinitely pending" as a precondition.
 - **2026-04-08 (post-Opus Phase 1):** Five corrections caught by Opus roadmap pass:
   1. §4.2 — UK lock times were off by ~2 hours; fixed to BST-correct values (14:50 / 15:00 / 15:30 UK).
   2. §2.9 — ATR/ORB ratio bin `30–40%` was missing; added explicitly as `0` points.
@@ -56,6 +57,7 @@ All under `/Users/office/Projects/tasty0dte-ironcondor/docs/`. Skim-indexed; ful
 - **Close position within ORB:** `(orb_close - orb_low) / (orb_high - orb_low)` for that ORB's final-bar close. Aligned-with-bull = close ≥ 0.80; aligned-with-bear = close ≤ 0.20.
 - **Range expansion ratio:** `orb60_range / orb20_range`.
 - **All 3 same:** ORB20 broke direction X, ORB30 broke direction X, ORB60 broke direction X.
+- **Bar gap during lock (`bar_gap_during_lock`):** an ORB is marked SKIPPED — not locked — if at any point before it locks, the engine observes a 5-min bar whose start is at or past that ORB's lock-bar start without every required in-window bar being present. This catches three variants: (a) the lock bar arrives but a prior in-window bar is missing, (b) the lock bar itself never arrives and a later bar is observed, (c) bars arrive reordered such that a post-lock-boundary bar is seen before an earlier required bar. In all three cases the ORB is frozen as skipped with a gap reason, and downstream breakout / stacking / grading logic MUST treat it as unavailable for trading decisions. Arrival order before the lock boundary is not enforced; same-timestamp redeliveries overwrite with latest-wins semantics (matching `bar_fetcher`). This contract is implemented in `orb_levels.py::OrbBuilder` (Slice 2) and the reason string is picked up by Slice 8's `SkipEvent`.
 
 ### 2.3 The stacking decision tree (Doc2 §STEPS 1–3)
 
