@@ -62,6 +62,9 @@ _last_lines_count = 0
 _NUMERIC_COLS_TO_FORMAT = ['Credit Collected', 'Buying Power', 'Profit Target', 'Stop Loss', 'Exit P/L', 'IV Rank']
 _TEXT_COLS_FOR_UPDATES = ['Exit Time', 'Notes']
 
+# In-memory dict: strategy_id -> reason. Written by orb_stacking.live_runner on ORB60 oppose.
+FORCE_CLOSE_REASONS: dict[str, str] = {}
+
 
 def _normalize_numeric_columns(df):
     for col in _NUMERIC_COLS_TO_FORMAT:
@@ -383,7 +386,21 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             target_debit = initial_credit - profit_target
             
             current_profit = initial_credit - debit_to_close
-            
+
+            # ORB60 force-close check
+            strategy_id = str(row.get('StrategyId', '')) if 'StrategyId' in row else ''
+            if strategy_id and strategy_id in FORCE_CLOSE_REASONS:
+                reason = FORCE_CLOSE_REASONS.pop(strategy_id)
+                logger.info(f"Force-closing {strategy_id} reason={reason}")
+                if not read_only:
+                    _ensure_text_columns(df, ['Notes'])
+                    _append_note(df, index, f"Force-close: {reason}")
+                    await close_trade(df, index, debit_to_close, current_profit, csv_path, session, reason=reason)
+                    trades_closed += 1
+                else:
+                    status_lines.append(f"   >>> FORCE CLOSE PENDING: {reason} (Read-Only)")
+                continue
+
             sc_str = _parse_strike_token(row['Short Call'])
             lc_str = _parse_strike_token(row['Long Call'])
             sp_str = _parse_strike_token(row['Short Put'])
@@ -429,7 +446,12 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
                 if now_uk.time() >= time(19, 50):
                     is_time_exit = True
                     time_exit_label = "19:50"
-            
+            # Time exit at 19:50 UK for ORB-STACK
+            elif strategy_name.startswith("ORB-STACK"):
+                if now_uk.time() >= time(19, 50):
+                    is_time_exit = True
+                    time_exit_label = "19:50"
+
             status_lines.append(f"Trade {index} [{description}]: Credit={initial_credit:.2f}, Current Debit={debit_to_close:.2f}, P/L={current_profit:.2f}, Target={profit_target:.2f}{iv_rank_str}")
 
             # Stop loss check

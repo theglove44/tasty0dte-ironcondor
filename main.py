@@ -20,7 +20,7 @@ from tastytrade import Session
 import strategy
 import monitor
 import logger as trade_logger
-import premium_popper
+from orb_stacking.live_runner import run_orb_stacking
 
 try:
     from local import discord_notify
@@ -263,14 +263,15 @@ async def main():
                 traded_today = set()
                 popper_started_today = False
                 last_date = today
+                monitor.FORCE_CLOSE_REASONS.clear()
                 logger.info(f"New trading day: {today}")
 
-            # Launch Premium Popper at 14:30 UK (market open) to collect ORB
+            # Launch ORB Stacking at 14:30 UK (market open) to collect ORB
             current_time = now_uk.time()
             if (current_time.hour == 14 and current_time.minute == 30 and not popper_started_today):
                 popper_started_today = True
-                logger.info("Launching Premium Popper ORB20 background task...")
-                asyncio.create_task(premium_popper.run_premium_popper(session))
+                logger.info("Launching ORB Stacking background task...")
+                asyncio.create_task(run_orb_stacking(session))
 
             # Check for entry times
             for target in target_times:

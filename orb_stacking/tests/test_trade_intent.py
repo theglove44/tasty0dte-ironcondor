@@ -114,6 +114,7 @@ class TradeIntentTests(unittest.TestCase):
                 "calendar_blocked",
                 "daily_cap",
                 "bar_gap_during_lock",
+                "zero_contracts",
             },
         )
 

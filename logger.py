@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 
 LOG_FILE = "paper_trades.csv"
+SKIP_LOG_FILE = "skip_events.csv"
 logger = logging.getLogger("logger")
 
 HEADER = [
@@ -14,6 +15,8 @@ HEADER = [
     "Status", "Exit Time", "Exit P/L", "Notes", "IV Rank",
     "Short Delta", "SPX Spot"
 ]
+
+SKIP_HEADER = ["timestamp", "reason", "direction", "stack_tier", "notes"]
 
 def init_log_file():
     """
@@ -160,4 +163,20 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
             f"{ivr_val:.2f}",
             delta_str,
             spot_str
+        ])
+
+
+def log_skip_event(event) -> None:
+    """Append an OrbSkipEvent to skip_events.csv. Creates file with header if missing."""
+    file_exists = os.path.exists(SKIP_LOG_FILE)
+    with open(SKIP_LOG_FILE, mode='a', newline='') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(SKIP_HEADER)
+        writer.writerow([
+            event.timestamp.isoformat() if hasattr(event.timestamp, 'isoformat') else str(event.timestamp),
+            event.reason,
+            event.direction or "",
+            getattr(event, 'stack_tier', "") or "",
+            getattr(event, 'notes', "") or "",
         ])
