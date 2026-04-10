@@ -229,3 +229,26 @@ class TestOrbStackingEngine(unittest.TestCase):
         for intent in _find_intents(results):
             self.assertIsNone(intent.expected_credit,
                 msg=f"expected_credit should be None on {intent.stack_tier} intent")
+
+    def test_gap_skip_precedes_stack_events_in_results(self):
+        """Gap skips must appear before stack event results in the same bar's output."""
+        day = _dt.date(2026, 4, 9)
+        # Feed a single bar at 12:00 ET — past all ORB lock times AND at noon
+        # (the entry-window boundary; >= 12:00 ET triggers TIMEOUT_NOON).
+        # This triggers both gap skips (ORB20/30/60 never locked) and TIMEOUT_NOON.
+        bar = _bar(_et(12, 0, day), 6550.0, 6555.0, 6548.0, 6552.0)
+        results = self.engine.on_closed_bar(bar)
+
+        self.assertGreater(len(results), 1, "Expected both gap skips and timeout event")
+
+        gap_skips = [r for r in results if isinstance(r, OrbSkipEvent) and r.reason == "bar_gap_during_lock"]
+        timeout_skips = [r for r in results if isinstance(r, OrbSkipEvent) and r.reason == "no_breakout_before_noon"]
+
+        self.assertEqual(len(gap_skips), 3, "Should have gap skips for ORB20, ORB30, ORB60")
+        self.assertEqual(len(timeout_skips), 1, "Should have exactly one TIMEOUT_NOON")
+
+        # Gap skips must all precede the timeout event in the results list
+        last_gap_idx = max(results.index(s) for s in gap_skips)
+        timeout_idx = results.index(timeout_skips[0])
+        self.assertLess(last_gap_idx, timeout_idx,
+            "All gap skips must appear before stack event results (TIMEOUT_NOON)")

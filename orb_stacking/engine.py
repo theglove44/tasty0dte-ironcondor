@@ -88,6 +88,22 @@ class OrbStackingEngine:
 
         self._atr.update(bar)
 
+        # Gap-before-stack ordering contract
+        # ─────────────────────────────────
+        # `_stacking.on_closed_bar` is called first because gap_reason() is
+        # populated *inside* that call (OrbBuilder sets it when a bar arrives
+        # at or after the lock-boundary time, whether that is the boundary bar
+        # itself or a later bar that first crosses it).
+        # The gap-check loop below appends any OrbSkipEvent(reason=GAP_REASON)
+        # to `results` before the stack-event dispatch loop appends its events,
+        # so the output contract — gap skips precede stack-derived events — holds.
+        #
+        # Mutual-exclusivity note: a gapped ORB is marked SKIPPED (not LOCKED),
+        # so StackingEngine will never emit ORB20_BREAK / ORB30_CONFIRM /
+        # ORB60_CONFIRM for an ORB that has a gap. On any bar where gaps and stack
+        # events coexist (e.g. ORB20/30/60 all gapped + TIMEOUT_NOON fires), the
+        # gap skips always land in `results` before the timeout skip.
+
         stack_events = self._stacking.on_closed_bar(bar)
 
         orb_builder = self._stacking.orb_builder
