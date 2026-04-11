@@ -86,6 +86,7 @@ var line   sl_line          = na
 var label  double_label     = na
 var label  skip_label       = na
 var label  time_exit_label  = na
+var label  hard_exit_label  = na
 
 if is_new_session
     orb20_hi        := na
@@ -116,29 +117,6 @@ if is_new_session
     orb30_lock_bar  := na
     orb60_lock_bar  := na
 
-    if not na(orb20_box)
-        box.delete(orb20_box)
-    if not na(orb20_bull_zone)
-        box.delete(orb20_bull_zone)
-    if not na(orb20_bear_zone)
-        box.delete(orb20_bear_zone)
-    if not na(orb20_hi_line)
-        line.delete(orb20_hi_line)
-    if not na(orb20_lo_line)
-        line.delete(orb20_lo_line)
-    if not na(orb20_mid_line)
-        line.delete(orb20_mid_line)
-    if not na(double_label)
-        label.delete(double_label)
-    if not na(skip_label)
-        label.delete(skip_label)
-    if not na(time_exit_label)
-        label.delete(time_exit_label)
-    if not na(pt_line)
-        line.delete(pt_line)
-    if not na(sl_line)
-        line.delete(sl_line)
-
     orb20_box       := na
     orb20_bull_zone := na
     orb20_bear_zone := na
@@ -158,6 +136,7 @@ if is_new_session
     double_label     := na
     skip_label       := na
     time_exit_label  := na
+    hard_exit_label  := na
 
 if in_orb20_win
     orb20_hi := na(orb20_hi) ? high : math.max(orb20_hi, high)
@@ -243,7 +222,7 @@ if stack_tier == "FLAT" and orb20_fired
     stack_tier := "HALF"
 if stack_tier == "HALF" and orb30_confirm
     stack_tier := "NORMAL"
-if (stack_tier == "NORMAL" or stack_tier == "HALF") and orb60_confirm
+if stack_tier == "NORMAL" and orb60_confirm
     stack_tier := closes_aligned >= 3 ? "DOUBLE" : "PLUS"
 if stack_tier != "FLAT" and stack_tier != "EXITED" and orb60_oppose
     stack_tier := "EXITED"
@@ -375,6 +354,11 @@ if double_active and et_t <= 1550 and _draw and not na(pt_line)
     line.set_x2(pt_line, bar_index+1)
     line.set_x2(sl_line, bar_index+1)
 
+bool _hard_exit_rising = stack_tier == "EXITED" and stack_tier[1] != "EXITED"
+if _hard_exit_rising and double_active and _draw and na(hard_exit_label)
+    float _hey = direction == 1 ? high : low
+    hard_exit_label := label.new(bar_index, _hey, "⚠ HARD EXIT\nORB60 OPPOSE", xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_down : label.style_label_up), color=color.red, textcolor=color.white, size=size.normal)
+
 if et_t == 1530 and double_active and not time_exit_fired and barstate.isconfirmed and _draw
     time_exit_label := label.new(bar_index, low, "⏰ TIME EXIT\nClose now", xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up, color=color.red, textcolor=color.white, size=size.normal)
     time_exit_fired := true
@@ -412,6 +396,9 @@ else if noon_timeout or orb30_oppose
     ds_txt := "NOT TODAY"
     ds_bg  := cell_warn
 else if orb60_fired and orb60_confirm and stack_tier == "PLUS"
+    ds_txt := "NOT TODAY"
+    ds_bg  := cell_warn
+else if et_t >= 1200
     ds_txt := "NOT TODAY"
     ds_bg  := cell_warn
 else
