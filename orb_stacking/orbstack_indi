@@ -1,0 +1,451 @@
+//@version=5
+indicator("ORB Stacking [5m SPX]", overlay=true, max_boxes_count=200, max_lines_count=500, max_labels_count=500)
+
+// ─── Inputs ─────────────────────────────────────────────────────────
+string GRP_D = "── Display ──"
+string GRP_C = "── Colors ──"
+
+show_orb20   = input.bool(true,  "Show ORB20 range box",      group=GRP_D)
+show_orb30   = input.bool(true,  "Show ORB30 range box",      group=GRP_D)
+show_orb60   = input.bool(true,  "Show ORB60 range box",      group=GRP_D)
+show_mid     = input.bool(true,  "Show ORB20 midpoint line",  group=GRP_D)
+show_levels  = input.bool(true,  "Extend ORB H/L after lock", group=GRP_D)
+show_signals = input.bool(true,  "Show stacking signals",     group=GRP_D)
+show_fomc         = input.bool(true, "Highlight FOMC days",          group=GRP_D)
+show_lookback_days = input.int(7,   "History: calendar days to show", minval=1, maxval=60, group=GRP_D)
+
+c_orb20  = input.color(color.new(#2196F3, 80), "ORB20",          group=GRP_C)
+c_orb30  = input.color(color.new(#4CAF50, 80), "ORB30",          group=GRP_C)
+c_orb60  = input.color(color.new(#FF9800, 80), "ORB60",          group=GRP_C)
+c_orb20_line = input.color(color.new(#2196F3, 0), "ORB20 line",     group=GRP_C)
+c_orb30_line = input.color(color.new(#4CAF50, 0), "ORB30 line",     group=GRP_C)
+c_orb60_line = input.color(color.new(#FF9800, 0), "ORB60 line",     group=GRP_C)
+c_bull   = input.color(#00C853,                "Bull signal",     group=GRP_C)
+c_bear   = input.color(#D50000,                "Bear signal",     group=GRP_C)
+c_warn   = input.color(#FF9800,                "ORB30 oppose",    group=GRP_C)
+c_exit   = input.color(#B71C1C,                "ORB60 hard exit", group=GRP_C)
+c_double = input.color(#7B1FA2,                "DOUBLE tier",     group=GRP_C)
+c_mid    = input.color(color.new(#90CAF9, 50), "ORB20 midpoint",  group=GRP_C)
+c_mid_line = input.color(color.new(#90CAF9, 0), "ORB20 mid line", group=GRP_C)
+
+// ─── Enforce 5-minute timeframe ─────────────────────────────────────
+if timeframe.multiplier != 5 or not timeframe.isintraday
+    runtime.error("ORB Stacking requires a 5-minute chart")
+
+// ─── ET time helpers ─────────────────────────────────────────────────
+_et_h = hour(time,   "America/New_York")
+_et_m = minute(time, "America/New_York")
+et_t  = _et_h * 100 + _et_m   // compact HHMM, e.g. 930, 945, 1025
+
+// ─── Session detection ───────────────────────────────────────────────
+// Fires once per day on the 09:30 ET opening bar.
+is_new_session = et_t == 930 and (na(et_t[1]) or et_t[1] != 930)
+
+// ─── ORB window membership ───────────────────────────────────────────
+// Lock bar = the LAST bar of each window (its close is orb.close; its H/L
+// is included in the range). The breakout detector watches the NEXT bar.
+//
+//   ORB20  → bars 09:30 09:35 09:40 09:45   lock bar: 09:45 (closes 09:50)
+//   ORB30  → bars 09:30 … 09:55             lock bar: 09:55 (closes 10:00)
+//   ORB60  → bars 09:30 … 10:25             lock bar: 10:25 (closes 10:30)
+
+in_orb20_win  = et_t >= 930 and et_t <= 945
+in_orb30_win  = et_t >= 930 and et_t <= 955
+in_orb60_win  = et_t >= 930 and et_t <= 1025
+is_orb20_lock = et_t == 945
+is_orb30_lock = et_t == 955
+is_orb60_lock = et_t == 1025
+
+// ─── Declare all session-state variables ────────────────────────────
+var float orb20_hi        = na
+var float orb20_lo        = na
+var float orb20_mid       = na
+var float orb30_hi        = na
+var float orb30_lo        = na
+var float orb60_hi        = na
+var float orb60_lo        = na
+var float orb20_close_pct = na
+var float orb30_close_pct = na
+var float orb60_close_pct = na
+var int   direction       = 0   // 1=bull  -1=bear  0=none
+var bool  orb20_fired     = false
+var bool  orb30_fired     = false
+var bool  orb60_fired     = false
+var bool  orb20_bull      = false
+var bool  orb20_bear      = false
+var bool  orb30_confirm   = false
+var bool  orb30_oppose    = false
+var bool  orb60_confirm   = false
+var bool  orb60_oppose    = false
+var bool  noon_timeout    = false
+var string stack_tier     = "FLAT"
+var int   session_start_bar  = na   // bar_index of 09:30 bar — left edge of all ORB boxes
+var int   session_start_time = na   // ms timestamp — kept for _draw window check
+var int   orb20_lock_bar     = na
+var int   orb30_lock_bar     = na
+var int   orb60_lock_bar     = na
+var box   orb20_box          = na
+var box   orb20_bull_zone    = na
+var box   orb20_bear_zone    = na
+var line  orb20_hi_line      = na
+var line  orb20_lo_line      = na
+var line  orb30_hi_line      = na
+var line  orb30_lo_line      = na
+var line  orb60_hi_line      = na
+var line  orb60_lo_line      = na
+var line  orb20_mid_line     = na
+var table signal_panel       = table.new(position.bottom_right, 2, 11, border_width=1)
+
+int BAR_MS = 5 * 60 * 1000
+
+// ─── Reset all state at new session ─────────────────────────────────
+if is_new_session
+    orb20_hi        := na
+    orb20_lo        := na
+    orb20_mid       := na
+    orb30_hi        := na
+    orb30_lo        := na
+    orb60_hi        := na
+    orb60_lo        := na
+    orb20_close_pct := na
+    orb30_close_pct := na
+    orb60_close_pct := na
+    direction       := 0
+    orb20_fired     := false
+    orb30_fired     := false
+    orb60_fired     := false
+    orb20_bull      := false
+    orb20_bear      := false
+    orb30_confirm   := false
+    orb30_oppose    := false
+    orb60_confirm   := false
+    orb60_oppose    := false
+    noon_timeout    := false
+    stack_tier      := "FLAT"
+    session_start_bar  := bar_index
+    session_start_time := time
+    orb20_box        := na
+    orb20_bull_zone  := na
+    orb20_bear_zone  := na
+    orb20_hi_line  := na
+    orb20_lo_line  := na
+    orb30_hi_line  := na
+    orb30_lo_line  := na
+    orb60_hi_line  := na
+    orb60_lo_line  := na
+    orb20_mid_line := na
+
+// ─── Accumulate ORB H/L (lock bar included in each window) ──────────
+if in_orb20_win
+    orb20_hi := na(orb20_hi) ? high : math.max(orb20_hi, high)
+    orb20_lo := na(orb20_lo) ? low  : math.min(orb20_lo, low)
+
+if in_orb30_win
+    orb30_hi := na(orb30_hi) ? high : math.max(orb30_hi, high)
+    orb30_lo := na(orb30_lo) ? low  : math.min(orb30_lo, low)
+
+if in_orb60_win
+    orb60_hi := na(orb60_hi) ? high : math.max(orb60_hi, high)
+    orb60_lo := na(orb60_lo) ? low  : math.min(orb60_lo, low)
+
+// ─── Lock bar: snapshot bar indices and compute close_pct ───────────
+// close_pct = (lock_bar_close - orb_low) / orb_range
+// Bull-aligned: close_pct >= 0.80   Bear-aligned: close_pct <= 0.20
+if is_orb20_lock and not na(orb20_hi)
+    orb20_lock_bar := bar_index
+    orb20_mid      := (orb20_hi + orb20_lo) / 2.0
+    float _r = orb20_hi - orb20_lo
+    orb20_close_pct := _r > 0.0 ? (close - orb20_lo) / _r : na
+
+if is_orb30_lock and not na(orb30_hi)
+    orb30_lock_bar := bar_index
+    float _r = orb30_hi - orb30_lo
+    orb30_close_pct := _r > 0.0 ? (close - orb30_lo) / _r : na
+
+if is_orb60_lock and not na(orb60_hi)
+    orb60_lock_bar := bar_index
+    float _r = orb60_hi - orb60_lo
+    orb60_close_pct := _r > 0.0 ? (close - orb60_lo) / _r : na
+
+// ─── One-shot breakout detection ────────────────────────────────────
+// Fires on the first bar AFTER each lock bar that closes outside the range.
+// (The lock bar itself cannot close outside its own range.)
+// Entry window closes at noon; no new breakouts after 12:00 ET.
+
+if not orb20_fired and et_t >= 950 and et_t < 1200 and not na(orb20_hi)
+    if close > orb20_hi
+        direction   := 1
+        orb20_bull  := true
+        orb20_fired := true
+    else if close < orb20_lo
+        direction   := -1
+        orb20_bear  := true
+        orb20_fired := true
+
+// ORB30: only meaningful when ORB20 has broken
+if not orb30_fired and direction != 0 and et_t >= 1000 and et_t < 1200 and not na(orb30_hi)
+    if close > orb30_hi
+        orb30_fired   := true
+        orb30_confirm := (direction == 1)
+        orb30_oppose  := (direction == -1)
+    else if close < orb30_lo
+        orb30_fired   := true
+        orb30_confirm := (direction == -1)
+        orb30_oppose  := (direction == 1)
+
+// ORB60: only meaningful when ORB30 confirmed
+if not orb60_fired and orb30_confirm and et_t >= 1030 and et_t < 1200 and not na(orb60_hi)
+    if close > orb60_hi
+        orb60_fired   := true
+        orb60_confirm := (direction == 1)
+        orb60_oppose  := (direction == -1)
+    else if close < orb60_lo
+        orb60_fired   := true
+        orb60_confirm := (direction == -1)
+        orb60_oppose  := (direction == 1)
+
+// No ORB20 breakout by noon → terminal timeout
+if not noon_timeout and not orb20_fired and et_t == 1200
+    noon_timeout := true
+
+// ─── Close alignment count ───────────────────────────────────────────
+// Only count confirmed-direction ORBs. ORB30/60 alignment checked only
+// when they confirm (not oppose), matching engine's _is_close_aligned logic.
+bool _a20 = false
+bool _a30 = false
+bool _a60 = false
+
+if direction == 1
+    _a20 := not na(orb20_close_pct) and orb20_close_pct >= 0.80
+    _a30 := orb30_confirm and not na(orb30_close_pct) and orb30_close_pct >= 0.80
+    _a60 := orb60_confirm and not na(orb60_close_pct) and orb60_close_pct >= 0.80
+else if direction == -1
+    _a20 := not na(orb20_close_pct) and orb20_close_pct <= 0.20
+    _a30 := orb30_confirm and not na(orb30_close_pct) and orb30_close_pct <= 0.20
+    _a60 := orb60_confirm and not na(orb60_close_pct) and orb60_close_pct <= 0.20
+
+closes_aligned = (_a20 ? 1 : 0) + (_a30 ? 1 : 0) + (_a60 ? 1 : 0)
+
+// ─── Stacking tier state machine ─────────────────────────────────────
+// FLAT → HALF → NORMAL → PLUS/DOUBLE   (or EXITED on ORB60 oppose)
+if stack_tier == "FLAT" and orb20_fired
+    stack_tier := "HALF"
+if stack_tier == "HALF" and orb30_confirm
+    stack_tier := "NORMAL"
+if (stack_tier == "NORMAL" or stack_tier == "HALF") and orb60_confirm
+    stack_tier := closes_aligned >= 3 ? "DOUBLE" : "PLUS"
+if stack_tier != "FLAT" and stack_tier != "EXITED" and orb60_oppose
+    stack_tier := "EXITED"
+
+// ─── Range expansion ratio (ORB60 / ORB20) ──────────────────────────
+float _r20 = not na(orb20_hi) ? orb20_hi - orb20_lo : na
+float _r60 = not na(orb60_hi) ? orb60_hi - orb60_lo : na
+float range_exp_ratio = not na(_r20) and _r20 > 0 and not na(_r60) ? _r60 / _r20 : na
+
+// ─── FOMC dates 2025–2026 ─────────────────────────────────────────────
+// Format: YYYYMMDD integer for fast lookup on every bar
+int _day_int = year * 10000 + month * 100 + dayofmonth
+// Gate all visual drawing to the look-back window.
+// timenow is always the current wall-clock time; time is the bar's open timestamp.
+// 86400000 = ms per calendar day.  Default 7 days ≈ 5 trading sessions.
+bool _draw = time >= timenow - show_lookback_days * 86400000
+var array<int> _fomc = array.from(20250129, 20250319, 20250507, 20250618, 20250730, 20250917, 20251029, 20251210, 20260128, 20260318, 20260506, 20260617, 20260729, 20260916, 20261028, 20261209)
+bool is_fomc = show_fomc and array.includes(_fomc, _day_int)
+
+// ─── Rising-edge flags (fire once per session per event) ─────────────
+bool orb20_bull_signal = orb20_bull    and not orb20_bull[1]
+bool orb20_bear_signal = orb20_bear    and not orb20_bear[1]
+bool orb30_conf_signal = orb30_confirm and not orb30_confirm[1]
+bool orb30_opp_signal  = orb30_oppose  and not orb30_oppose[1]
+bool orb60_conf_signal = orb60_confirm and not orb60_confirm[1]
+bool orb60_opp_signal  = orb60_oppose  and not orb60_oppose[1]
+
+// ─── Direction-gated close-alignment booleans ────────────────────────
+// Bull: close_pct ≥ 0.80   Bear: close_pct ≤ 0.20  (matches engine exactly)
+bool a20 = direction != 0 and not na(orb20_close_pct) and (direction == 1 ? orb20_close_pct >= 0.80 : orb20_close_pct <= 0.20)
+bool a30 = direction != 0 and orb30_confirm and not na(orb30_close_pct) and (direction == 1 ? orb30_close_pct >= 0.80 : orb30_close_pct <= 0.20)
+bool a60 = direction != 0 and orb60_confirm and not na(orb60_close_pct) and (direction == 1 ? orb60_close_pct >= 0.80 : orb60_close_pct <= 0.20)
+
+color sig_col = direction == 1 ? c_bull : c_bear
+
+// ─── Background Highlights ───────────────────────────────────────────
+bgcolor(is_fomc and et_t >= 930 and et_t < 1600 ? color.new(#FFEB3B, 93) : na, title="FOMC day")
+bgcolor(_draw and orb30_opp_signal ? color.new(c_warn, 82) : na, title="ORB30 oppose flash")
+bgcolor(_draw and orb60_opp_signal ? color.new(c_exit, 80) : na, title="ORB60 hard exit flash")
+
+// ─── Chart-Anchored Visuals ──────────────────────────────────────────
+// Keep every overlay element bound to bar time + price coordinates.
+
+// ORB20: filled box from market open through open+2h (11:30 ET)
+if _draw and show_orb20 and et_t >= 930 and et_t <= 1130 and not na(orb20_hi) and not na(session_start_bar)
+    if na(orb20_box)
+        orb20_box := box.new(left=session_start_bar, top=orb20_hi, right=bar_index + 1, bottom=orb20_lo, xloc=xloc.bar_index, bgcolor=c_orb20, border_color=c_orb20, border_width=1)
+    else
+        box.set_lefttop(orb20_box, session_start_bar, orb20_hi)
+        box.set_rightbottom(orb20_box, bar_index + 1, orb20_lo)
+        box.set_bgcolor(orb20_box, c_orb20)
+        box.set_border_color(orb20_box, c_orb20)
+
+// ORB20 alignment zones: top 20% green, bottom 20% red — drawn after ORB20 lock
+if _draw and show_orb20 and not na(orb20_hi) and et_t >= 950 and et_t <= 1130 and not na(session_start_bar)
+    float _range       = orb20_hi - orb20_lo
+    float _zone        = _range * 0.20
+    float _bull_bottom = orb20_hi - _zone
+    float _bear_top    = orb20_lo + _zone
+
+    if na(orb20_bull_zone)
+        orb20_bull_zone := box.new(left=session_start_bar, top=orb20_hi, right=bar_index + 1, bottom=_bull_bottom, xloc=xloc.bar_index, bgcolor=color.new(c_bull, 60), border_color=na, border_width=0)
+    else
+        box.set_lefttop(orb20_bull_zone, session_start_bar, orb20_hi)
+        box.set_rightbottom(orb20_bull_zone, bar_index + 1, _bull_bottom)
+
+    if na(orb20_bear_zone)
+        orb20_bear_zone := box.new(left=session_start_bar, top=_bear_top, right=bar_index + 1, bottom=orb20_lo, xloc=xloc.bar_index, bgcolor=color.new(c_bear, 60), border_color=na, border_width=0)
+    else
+        box.set_lefttop(orb20_bear_zone, session_start_bar, _bear_top)
+        box.set_rightbottom(orb20_bear_zone, bar_index + 1, orb20_lo)
+
+// ORB20: H/L extension lines after lock
+bool _xe20 = show_levels and _draw and not na(orb20_hi) and et_t >= 950  and et_t <= 1555 and not na(session_start_bar)
+// ORB30/60: H/L lines only (no fill) — show_orb30/show_orb60 toggle them
+bool _xe30 = show_orb30  and _draw and not na(orb30_hi) and et_t >= 1000 and et_t <= 1555 and not na(session_start_bar)
+bool _xe60 = show_orb60  and _draw and not na(orb60_hi) and et_t >= 1030 and et_t <= 1555 and not na(session_start_bar)
+bool _xmid = show_mid    and _draw and not na(orb20_mid) and et_t >= 950 and et_t <= 1555 and not na(session_start_bar)
+
+if _xe20
+    if na(orb20_hi_line)
+        orb20_hi_line := line.new(session_start_bar, orb20_hi, bar_index + 1, orb20_hi, xloc=xloc.bar_index, extend=extend.none, color=c_orb20_line, width=1)
+    else
+        line.set_xy1(orb20_hi_line, session_start_bar, orb20_hi)
+        line.set_xy2(orb20_hi_line, bar_index + 1, orb20_hi)
+        line.set_color(orb20_hi_line, c_orb20_line)
+    if na(orb20_lo_line)
+        orb20_lo_line := line.new(session_start_bar, orb20_lo, bar_index + 1, orb20_lo, xloc=xloc.bar_index, extend=extend.none, color=c_orb20_line, width=1)
+    else
+        line.set_xy1(orb20_lo_line, session_start_bar, orb20_lo)
+        line.set_xy2(orb20_lo_line, bar_index + 1, orb20_lo)
+        line.set_color(orb20_lo_line, c_orb20_line)
+
+if _xe30
+    if na(orb30_hi_line)
+        orb30_hi_line := line.new(session_start_bar, orb30_hi, bar_index + 1, orb30_hi, xloc=xloc.bar_index, extend=extend.none, color=c_orb30_line, width=1)
+    else
+        line.set_xy1(orb30_hi_line, session_start_bar, orb30_hi)
+        line.set_xy2(orb30_hi_line, bar_index + 1, orb30_hi)
+        line.set_color(orb30_hi_line, c_orb30_line)
+    if na(orb30_lo_line)
+        orb30_lo_line := line.new(session_start_bar, orb30_lo, bar_index + 1, orb30_lo, xloc=xloc.bar_index, extend=extend.none, color=c_orb30_line, width=1)
+    else
+        line.set_xy1(orb30_lo_line, session_start_bar, orb30_lo)
+        line.set_xy2(orb30_lo_line, bar_index + 1, orb30_lo)
+        line.set_color(orb30_lo_line, c_orb30_line)
+
+if _xe60
+    if na(orb60_hi_line)
+        orb60_hi_line := line.new(session_start_bar, orb60_hi, bar_index + 1, orb60_hi, xloc=xloc.bar_index, extend=extend.none, color=c_orb60_line, width=1)
+    else
+        line.set_xy1(orb60_hi_line, session_start_bar, orb60_hi)
+        line.set_xy2(orb60_hi_line, bar_index + 1, orb60_hi)
+        line.set_color(orb60_hi_line, c_orb60_line)
+    if na(orb60_lo_line)
+        orb60_lo_line := line.new(session_start_bar, orb60_lo, bar_index + 1, orb60_lo, xloc=xloc.bar_index, extend=extend.none, color=c_orb60_line, width=1)
+    else
+        line.set_xy1(orb60_lo_line, session_start_bar, orb60_lo)
+        line.set_xy2(orb60_lo_line, bar_index + 1, orb60_lo)
+        line.set_color(orb60_lo_line, c_orb60_line)
+
+if _xmid
+    if na(orb20_mid_line)
+        orb20_mid_line := line.new(session_start_bar, orb20_mid, bar_index + 1, orb20_mid, xloc=xloc.bar_index, extend=extend.none, color=c_mid_line, width=1)
+    else
+        line.set_xy1(orb20_mid_line, session_start_bar, orb20_mid)
+        line.set_xy2(orb20_mid_line, bar_index + 1, orb20_mid)
+        line.set_color(orb20_mid_line, c_mid_line)
+
+// ─── Stacking Signal Panel ───────────────────────────────────────────
+string dir_txt   = direction == 1 ? "BULL" : direction == -1 ? "BEAR" : "WAIT"
+color  panel_bg  = color.new(color.black, 10)
+color  cell_off  = color.new(color.gray, 82)
+color  cell_on   = color.new(#00C853, 10)
+color  cell_warn = color.new(c_warn, 15)
+color  cell_exit = color.new(c_exit, 10)
+color  cell_wait = color.new(color.gray, 70)
+color  txt_col   = color.white
+
+// Entry window: minutes remaining until 12:00 ET
+int    _mins_to_noon = _et_h < 12 ? (12 - _et_h) * 60 - _et_m : 0
+string entry_win_txt = et_t < 930 ? "Pre-market" : noon_timeout or et_t >= 1200 ? "CLOSED" : str.tostring(_mins_to_noon) + " min"
+color  entry_win_bg  = noon_timeout or et_t >= 1200 ? cell_exit : et_t < 930 ? cell_off : cell_on
+
+// ORB20 range size and expansion ratio
+string orb20_range_txt = not na(orb20_hi) ? str.tostring(orb20_hi - orb20_lo, "#.#") + " pts" : "—"
+color  orb20_range_bg  = not na(orb20_hi) ? cell_on : cell_off
+string exp_txt         = not na(range_exp_ratio) ? str.tostring(range_exp_ratio, "#.##") + "×" : "—"
+color  exp_bg          = not na(range_exp_ratio) ? (range_exp_ratio >= 1.5 ? cell_on : cell_warn) : cell_off
+
+// Close pct appended to each ORB status
+string _20pct = not na(orb20_close_pct) ? "  " + str.tostring(orb20_close_pct * 100, "#") + "%" : ""
+string _30pct = not na(orb30_close_pct) ? "  " + str.tostring(orb30_close_pct * 100, "#") + "%" : ""
+string _60pct = not na(orb60_close_pct) ? "  " + str.tostring(orb60_close_pct * 100, "#") + "%" : ""
+
+string orb20_status = noon_timeout and direction == 0 ? "NO BREAKOUT" : orb20_fired ? dir_txt + _20pct : "WAIT"
+color  orb20_bg     = orb20_fired ? cell_on : noon_timeout and direction == 0 ? cell_warn : cell_wait
+
+string orb30_status = orb30_confirm ? "CONFIRMED" + _30pct : orb30_oppose ? "OPPOSED" + _30pct : direction != 0 ? "WAIT" : "—"
+color  orb30_bg     = orb30_confirm ? cell_on : orb30_oppose ? cell_warn : cell_wait
+
+string orb60_status = orb60_confirm ? stack_tier + _60pct : orb60_oppose ? "HARD EXIT" + _60pct : orb30_confirm ? "WAIT" : "—"
+color  orb60_bg     = orb60_confirm ? cell_on : orb60_oppose ? cell_exit : cell_wait
+
+string align_status = str.tostring(closes_aligned) + "/3"
+color  align_bg     = closes_aligned >= 3 ? cell_on : closes_aligned > 0 ? color.new(c_warn, 35) : cell_off
+
+string tier_status = stack_tier
+color  tier_bg     = stack_tier == "DOUBLE" or stack_tier == "PLUS" or stack_tier == "NORMAL" or stack_tier == "HALF" ? cell_on : stack_tier == "EXITED" ? cell_exit : cell_wait
+
+// Next trigger hint
+string next_txt = stack_tier == "FLAT"   ? "ORB20 break"    :
+                  stack_tier == "HALF"   ? "ORB30 confirm"  :
+                  stack_tier == "NORMAL" ? "ORB60 confirm"  :
+                  stack_tier == "PLUS" or stack_tier == "DOUBLE" ? "Complete" :
+                  stack_tier == "EXITED" ? "Exited" : "—"
+color  next_bg  = stack_tier == "PLUS" or stack_tier == "DOUBLE" ? cell_on :
+                  stack_tier == "EXITED" ? cell_exit : cell_wait
+
+if barstate.islast and show_signals and _draw
+    // Row 0: FOMC flag — visible only on FOMC days, transparent otherwise
+    color _fomc_bg = is_fomc ? color.new(#FFEB3B, 75) : color.new(color.black, 100)
+    table.cell(signal_panel, 0, 0,  is_fomc ? "⚠  FOMC DAY" : "", text_color=color.new(#FFEB3B, 0), bgcolor=_fomc_bg, text_halign=text.align_center)
+    table.cell(signal_panel, 1, 0,  "", bgcolor=_fomc_bg)
+    // Row 1: Entry window countdown
+    table.cell(signal_panel, 0, 1,  "Entry Window",  text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 1,  entry_win_txt,   text_color=txt_col, bgcolor=entry_win_bg,  text_halign=text.align_center)
+    // Row 2: Direction
+    table.cell(signal_panel, 0, 2,  "Direction",     text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 2,  dir_txt,         text_color=txt_col, bgcolor=direction == 0 ? cell_wait : cell_on, text_halign=text.align_center)
+    // Row 3: Stacking tier
+    table.cell(signal_panel, 0, 3,  "Stacking",      text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 3,  tier_status,     text_color=txt_col, bgcolor=tier_bg,       text_halign=text.align_center)
+    // Row 4: Next trigger
+    table.cell(signal_panel, 0, 4,  "Next",          text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 4,  next_txt,        text_color=txt_col, bgcolor=next_bg,       text_halign=text.align_center)
+    // Row 5: ORB20
+    table.cell(signal_panel, 0, 5,  "ORB20 Break",   text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 5,  orb20_status,    text_color=txt_col, bgcolor=orb20_bg,      text_halign=text.align_center)
+    // Row 6: ORB30
+    table.cell(signal_panel, 0, 6,  "ORB30 Confirm", text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 6,  orb30_status,    text_color=txt_col, bgcolor=orb30_bg,      text_halign=text.align_center)
+    // Row 7: ORB60
+    table.cell(signal_panel, 0, 7,  "ORB60 Confirm", text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 7,  orb60_status,    text_color=txt_col, bgcolor=orb60_bg,      text_halign=text.align_center)
+    // Row 8: Close alignment count
+    table.cell(signal_panel, 0, 8,  "Close Align",   text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 8,  align_status,    text_color=txt_col, bgcolor=align_bg,      text_halign=text.align_center)
+    // Row 9: ORB20 range size
+    table.cell(signal_panel, 0, 9,  "ORB20 Range",   text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 9,  orb20_range_txt, text_color=txt_col, bgcolor=orb20_range_bg, text_halign=text.align_center)
+    // Row 10: Range expansion ratio
+    table.cell(signal_panel, 0, 10, "Expansion",     text_color=txt_col, bgcolor=panel_bg,      text_halign=text.align_left)
+    table.cell(signal_panel, 1, 10, exp_txt,         text_color=txt_col, bgcolor=exp_bg,        text_halign=text.align_center)
+else if barstate.islast
+    table.clear(signal_panel, 0, 0, 1, 10)
