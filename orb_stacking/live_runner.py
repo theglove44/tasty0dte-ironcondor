@@ -279,9 +279,15 @@ async def run_orb_stacking(session) -> None:
                         if result.reason in TERMINAL_SKIP_REASONS:
                             terminal = True
             except Exception as e:
-                logger.error(f"ORB Stacking bar error {type(e).__name__}: {e}")
+                logger.error(f"ORB Stacking bar error {type(e).__name__}: {e}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"ORB Stacking fatal error {type(e).__name__}: {e}")
+        logger.error(f"ORB Stacking fatal error {type(e).__name__}: {e}", exc_info=True)
+        if isinstance(e, BaseExceptionGroup):
+            for i, sub in enumerate(e.exceptions):
+                logger.error(
+                    f"  ORB sub-exception[{i}]: {type(sub).__name__}: {sub}",
+                    exc_info=(type(sub), sub, sub.__traceback__),
+                )
 
     logger.info("ORB Stacking finished for session.")

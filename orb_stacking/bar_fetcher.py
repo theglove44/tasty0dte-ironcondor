@@ -103,7 +103,7 @@ class BarFetcher:
                             continue
                         by_time[bar['time']] = bar
             except Exception as ex:
-                logger.error(f"History fetch error: {type(ex).__name__}: {ex}")
+                logger.error(f"History fetch error: {type(ex).__name__}: {ex}", exc_info=True)
 
         bars = clean_and_sort(by_time)
         if bars:
@@ -156,32 +156,42 @@ class BarFetcher:
 
         last_bar: dict | None = None
 
-        async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe_candle([self.symbol], self.interval, start_time)
+        try:
+            async with DXLinkStreamer(session) as streamer:
+                await streamer.subscribe_candle([self.symbol], self.interval, start_time)
 
-            async for event in streamer.listen(Candle):
-                events = event if isinstance(event, list) else [event]
-                for e in events:
-                    if not isinstance(e, Candle):
-                        continue
-                    bar = candle_to_bar(e)
-                    if bar is None or is_garbage_bar(bar):
-                        continue
+                async for event in streamer.listen(Candle):
+                    events = event if isinstance(event, list) else [event]
+                    for e in events:
+                        if not isinstance(e, Candle):
+                            continue
+                        bar = candle_to_bar(e)
+                        if bar is None or is_garbage_bar(bar):
+                            continue
 
-                    if last_bar is None:
-                        last_bar = bar
-                        continue
+                        if last_bar is None:
+                            last_bar = bar
+                            continue
 
-                    if bar['time'] > last_bar['time']:
-                        # Timestamp advanced -> previous bar closed
-                        logger.info(
-                            f"Bar closed: {last_bar['start'].isoformat()} "
-                            f"O={last_bar['open']:.2f} H={last_bar['high']:.2f} "
-                            f"L={last_bar['low']:.2f} C={last_bar['close']:.2f}"
-                        )
-                        yield last_bar
-                        last_bar = bar
-                    elif bar['time'] == last_bar['time']:
-                        # Same bar, fresher values
-                        last_bar = bar
-                    # bar['time'] < last_bar['time'] -> stale event, ignore
+                        if bar['time'] > last_bar['time']:
+                            # Timestamp advanced -> previous bar closed
+                            logger.info(
+                                f"Bar closed: {last_bar['start'].isoformat()} "
+                                f"O={last_bar['open']:.2f} H={last_bar['high']:.2f} "
+                                f"L={last_bar['low']:.2f} C={last_bar['close']:.2f}"
+                            )
+                            yield last_bar
+                            last_bar = bar
+                        elif bar['time'] == last_bar['time']:
+                            # Same bar, fresher values
+                            last_bar = bar
+                        # bar['time'] < last_bar['time'] -> stale event, ignore
+        except Exception as ex:
+            logger.error(f"stream_closed_bars error {type(ex).__name__}: {ex}", exc_info=True)
+            if isinstance(ex, BaseExceptionGroup):
+                for i, sub in enumerate(ex.exceptions):
+                    logger.error(
+                        f"  stream sub-exception[{i}]: {type(sub).__name__}: {sub}",
+                        exc_info=(type(sub), sub, sub.__traceback__),
+                    )
+            raise
