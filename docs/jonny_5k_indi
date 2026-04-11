@@ -355,7 +355,7 @@ if double_active and et_t <= 1550 and _draw and not na(pt_line)
     line.set_x2(sl_line, bar_index+1)
 
 bool _hard_exit_rising = stack_tier == "EXITED" and stack_tier[1] != "EXITED"
-if _hard_exit_rising and double_active and _draw and na(hard_exit_label)
+if _hard_exit_rising and orb30_confirm and _draw and na(hard_exit_label)
     float _hey = direction == 1 ? high : low
     hard_exit_label := label.new(bar_index, _hey, "⚠ HARD EXIT\nORB60 OPPOSE", xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_down : label.style_label_up), color=color.red, textcolor=color.white, size=size.normal)
 
