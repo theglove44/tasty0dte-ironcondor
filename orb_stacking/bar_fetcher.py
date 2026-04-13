@@ -30,6 +30,19 @@ DEFAULT_INTERVAL = "5m"
 DEFAULT_LOOKBACK_DAYS = 2
 WARMUP_LISTEN_SECONDS = 20
 WARMUP_MIN_BARS = 30
+
+# Maximum calendar gap between consecutive US trading days (Mon after Easter:
+# Fri + Mon both holidays → last trade was Thu = 4 calendar days back).
+_HOLIDAY_BUFFER_DAYS = 4
+
+
+def trading_lookback_days(n: int = 1) -> int:
+    """Calendar days to look back to guarantee n full prior trading sessions.
+
+    lookback_days=1 fails on Mondays (looks back to Sunday) and after long
+    weekends. Adding _HOLIDAY_BUFFER_DAYS covers all US holiday gaps safely.
+    """
+    return n + _HOLIDAY_BUFFER_DAYS
 STREAM_MAX_RETRIES = 5
 STREAM_RETRY_SLEEP_S = 4
 KEEPALIVE_INTERVAL_S = 30  # SDK doesn't respond to server KA pings; we must send proactively

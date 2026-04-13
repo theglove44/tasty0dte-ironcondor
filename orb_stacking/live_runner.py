@@ -14,7 +14,7 @@ from tastytrade.instruments import OptionType
 from tastytrade.market_data import get_market_data_by_type
 
 from orb_stacking.engine import OrbStackingEngine
-from orb_stacking.bar_fetcher import BarFetcher
+from orb_stacking.bar_fetcher import BarFetcher, trading_lookback_days
 from orb_stacking.trade_intent import OrbTradeIntent, OrbSkipEvent
 
 import strategy as strategy_mod
@@ -225,7 +225,7 @@ async def run_orb_stacking(session) -> None:
     try:
         logger.info("ORB Stacking: initializing engine and fetcher...")
         engine = OrbStackingEngine()
-        fetcher = BarFetcher("SPX", "5m", lookback_days=1)
+        fetcher = BarFetcher("SPX", "5m", lookback_days=trading_lookback_days())
 
         # Fetch and warm up history
         history_bars = await fetcher.fetch_history_with_retry(session)

@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from dotenv import load_dotenv
 from tastytrade import Session
 
-from orb_stacking.bar_fetcher import BarFetcher
+from orb_stacking.bar_fetcher import BarFetcher, trading_lookback_days
 from orb_stacking.engine import OrbStackingEngine
 from orb_stacking.time_utils import to_et, to_uk
 from orb_stacking.trade_intent import OrbSkipEvent, OrbTradeIntent
@@ -27,7 +27,7 @@ from orb_stacking.trade_intent import OrbSkipEvent, OrbTradeIntent
 
 SYMBOL = "SPX"
 INTERVAL = "5m"
-DEFAULT_LOOKBACK_DAYS = 1
+DEFAULT_LOOKBACK_DAYS = trading_lookback_days()
 TERMINAL_SKIP_REASONS = frozenset({"no_breakout_before_noon", "orb60_opposes_hard_exit"})
 
 
@@ -97,7 +97,7 @@ async def run_live(session: Session, engine: OrbStackingEngine) -> None:
 
 async def run_replay(session: Session, target_date: date, engine: OrbStackingEngine) -> None:
     today = to_et(datetime.now(timezone.utc)).date()
-    lookback_days = max(2, (today - target_date).days + 1)
+    lookback_days = trading_lookback_days() + (today - target_date).days
     fetcher = BarFetcher(SYMBOL, INTERVAL, lookback_days=lookback_days)
     print(f"Fetching bars for replay of {target_date}...")
     all_bars = await fetcher.fetch_history_with_retry(session)
