@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from tastytrade.instruments import OptionType
 from tastytrade.market_data import get_market_data_by_type
@@ -16,6 +16,7 @@ from tastytrade.market_data import get_market_data_by_type
 from orb_stacking.engine import OrbStackingEngine
 from orb_stacking.bar_fetcher import BarFetcher, trading_lookback_days
 from orb_stacking.trade_intent import OrbTradeIntent, OrbSkipEvent
+from orb_stacking.time_utils import to_et
 
 import strategy as strategy_mod
 import monitor as monitor_mod
@@ -34,9 +35,21 @@ TERMINAL_SKIP_REASONS = frozenset({"no_breakout_before_noon", "orb60_opposes_har
 
 
 def warmup_engine(engine: OrbStackingEngine, history_bars: list) -> None:
-    """Feed each history bar into engine._atr.update(bar). Do NOT call engine.on_closed_bar."""
+    """Initialise ATR and ORB state from historical bars.
+
+    Prior-session bars are fed to the ATR only (OrbBuilder is single-session;
+    crossing a date boundary raises ValueError). Today's bars are fed through
+    the full engine so OrbBuilder locks ORB20/30/60 from historical data —
+    preventing bar_gap_during_lock on mid-session restarts.
+
+    Return values (intents/skips) from historical bar processing are discarded.
+    """
+    today_et = to_et(datetime.now(timezone.utc)).date()
     for bar in history_bars:
-        engine._atr.update(bar)
+        if to_et(bar["start"]).date() < today_et:
+            engine._atr.update(bar)
+        else:
+            engine.on_closed_bar(bar)  # return value intentionally discarded
 
 
 def build_strike_map(options_0dte: list) -> dict:

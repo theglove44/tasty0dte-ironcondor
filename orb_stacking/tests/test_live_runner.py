@@ -4,7 +4,7 @@ Covers 16 test cases across 3 test classes.
 """
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch, mock_open
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import tempfile
 import os
 
@@ -31,21 +31,55 @@ class MockOption:
 class TestLiveRunnerSync(unittest.TestCase):
     """Sync tests for live_runner.py functions."""
 
-    def test_warmup_engine_updates_atr_with_bars(self):
-        """warmup_engine should call _atr.update for each bar."""
+    def _make_bar(self, dt_utc, open_=100, high=102, low=99, close=101):
+        """Build a minimal bar dict with a timezone-aware start datetime."""
+        return {
+            'time': int(dt_utc.timestamp() * 1000),
+            'start': dt_utc,
+            'open': open_, 'high': high, 'low': low, 'close': close,
+        }
+
+    def test_warmup_engine_prior_bars_use_atr_only(self):
+        """Prior-session bars must go to _atr.update only, not on_closed_bar."""
         mock_engine = MagicMock()
         mock_engine._atr = MagicMock()
 
-        bars = [
-            {'open': 100, 'high': 102, 'low': 99, 'close': 101},
-            {'open': 101, 'high': 103, 'low': 100, 'close': 102},
-        ]
+        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+        bar = self._make_bar(yesterday)
 
-        warmup_engine(mock_engine, bars)
+        warmup_engine(mock_engine, [bar])
 
-        self.assertEqual(mock_engine._atr.update.call_count, 2)
-        mock_engine._atr.update.assert_any_call(bars[0])
-        mock_engine._atr.update.assert_any_call(bars[1])
+        mock_engine._atr.update.assert_called_once_with(bar)
+        mock_engine.on_closed_bar.assert_not_called()
+
+    def test_warmup_engine_today_bars_use_full_engine(self):
+        """Today's bars must go through engine.on_closed_bar, not _atr.update directly."""
+        mock_engine = MagicMock()
+        mock_engine._atr = MagicMock()
+
+        # 15:00 UTC today (well within a trading day in ET)
+        today_15 = datetime.now(timezone.utc).replace(hour=15, minute=0, second=0, microsecond=0)
+        bar = self._make_bar(today_15)
+
+        warmup_engine(mock_engine, [bar])
+
+        mock_engine.on_closed_bar.assert_called_once_with(bar)
+        mock_engine._atr.update.assert_not_called()
+
+    def test_warmup_engine_splits_prior_and_today(self):
+        """Prior bars -> _atr.update; today bars -> on_closed_bar. No overlap."""
+        mock_engine = MagicMock()
+        mock_engine._atr = MagicMock()
+
+        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+        today_15 = datetime.now(timezone.utc).replace(hour=15, minute=0, second=0, microsecond=0)
+        prior_bar = self._make_bar(yesterday)
+        today_bar = self._make_bar(today_15)
+
+        warmup_engine(mock_engine, [prior_bar, today_bar])
+
+        mock_engine._atr.update.assert_called_once_with(prior_bar)
+        mock_engine.on_closed_bar.assert_called_once_with(today_bar)
 
     def test_warmup_engine_with_empty_bars(self):
         """warmup_engine should handle empty bar list gracefully."""
@@ -55,6 +89,7 @@ class TestLiveRunnerSync(unittest.TestCase):
         warmup_engine(mock_engine, [])
 
         mock_engine._atr.update.assert_not_called()
+        mock_engine.on_closed_bar.assert_not_called()
 
     def test_build_strike_map_groups_by_strike_and_side(self):
         """build_strike_map should return {strike: {put/call: option}}."""
