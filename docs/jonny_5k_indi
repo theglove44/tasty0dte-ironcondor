@@ -150,23 +150,23 @@ if in_orb60_win
     orb60_hi := na(orb60_hi) ? high : math.max(orb60_hi, high)
     orb60_lo := na(orb60_lo) ? low  : math.min(orb60_lo, low)
 
-if is_orb20_lock and not na(orb20_hi)
+if is_orb20_lock and not na(orb20_hi) and barstate.isconfirmed
     orb20_lock_bar := bar_index
     orb20_mid      := (orb20_hi + orb20_lo) / 2.0
     float _r = orb20_hi - orb20_lo
     orb20_close_pct := _r > 0.0 ? (close - orb20_lo) / _r : na
 
-if is_orb30_lock and not na(orb30_hi)
+if is_orb30_lock and not na(orb30_hi) and barstate.isconfirmed
     orb30_lock_bar := bar_index
     float _r = orb30_hi - orb30_lo
     orb30_close_pct := _r > 0.0 ? (close - orb30_lo) / _r : na
 
-if is_orb60_lock and not na(orb60_hi)
+if is_orb60_lock and not na(orb60_hi) and barstate.isconfirmed
     orb60_lock_bar := bar_index
     float _r = orb60_hi - orb60_lo
     orb60_close_pct := _r > 0.0 ? (close - orb60_lo) / _r : na
 
-if not orb20_fired and et_t >= 950 and et_t < 1200 and not na(orb20_hi)
+if not orb20_fired and et_t >= 950 and et_t < 1200 and not na(orb20_hi) and barstate.isconfirmed
     if close > orb20_hi
         direction    := 1
         orb20_bull   := true
@@ -180,7 +180,7 @@ if not orb20_fired and et_t >= 950 and et_t < 1200 and not na(orb20_hi)
         short_strike := math.ceil(orb20_mid / 5) * 5
         long_strike  := short_strike + 5
 
-if not orb30_fired and direction != 0 and et_t >= 1000 and et_t < 1200 and not na(orb30_hi)
+if not orb30_fired and direction != 0 and et_t >= 1000 and et_t < 1200 and not na(orb30_hi) and barstate.isconfirmed
     if close > orb30_hi
         orb30_fired   := true
         orb30_confirm := (direction == 1)
@@ -190,7 +190,7 @@ if not orb30_fired and direction != 0 and et_t >= 1000 and et_t < 1200 and not n
         orb30_confirm := (direction == -1)
         orb30_oppose  := (direction == 1)
 
-if not orb60_fired and orb30_confirm and et_t >= 1030 and et_t < 1200 and not na(orb60_hi)
+if not orb60_fired and orb30_confirm and et_t >= 1030 and et_t < 1200 and not na(orb60_hi) and barstate.isconfirmed
     if close > orb60_hi
         orb60_fired   := true
         orb60_confirm := (direction == 1)
