@@ -386,13 +386,10 @@ if _xmid
         line.set_xy2(orb20_mid_line, bar_index+1, orb20_mid)
 
 if double_rising and _draw
-    string _line1 = direction == 1 ? "▲ ENTER" : "▼ ENTER"
-    string _line2 = direction == 1 ? "BULL PUT SPREAD" : "BEAR CALL SPREAD"
-    string _line3 = "Short: " + str.tostring(short_strike, "#") + " / Long: " + str.tostring(long_strike, "#")
-    string _txt   = _line1 + "\n" + _line2 + "\n" + _line3
+    string _arrow = direction == 1 ? "▲" : "▼"
     float _y = direction == 1 ? low : high
     color _bg = direction == 1 ? c_bull : c_bear
-    double_label := label.new(bar_index, _y, _txt, xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_up : label.style_label_down), color=_bg, textcolor=color.white, size=size.large)
+    double_label := label.new(bar_index, _y, _arrow, xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_up : label.style_label_down), color=_bg, textcolor=color.white, size=size.small)
     pt_line := line.new(bar_index, short_strike, bar_index+1, short_strike, xloc=xloc.bar_index, color=c_pt, style=line.style_dashed, width=2)
     sl_line := line.new(bar_index, long_strike,  bar_index+1, long_strike,  xloc=xloc.bar_index, color=c_sl, style=line.style_dashed, width=2)
 
@@ -451,7 +448,7 @@ else
     ds_txt := "WAITING"
     ds_bg  := cell_wait
 
-string trade_txt = double_active and not na(short_strike) ? (direction == 1 ? "BPS " : "BCS ") + str.tostring(short_strike, "#") + "/" + str.tostring(long_strike, "#") : "—"
+string trade_txt = double_active and not na(short_strike) ? (direction == 1 ? "BULL PUT\n" : "BEAR CALL\n") + str.tostring(short_strike, "#") + "/" + str.tostring(long_strike, "#") : "—"
 color  trade_bg  = double_active ? cell_on : cell_off
 
 color quality_bg = quality_badge == "A+" ? cell_on : quality_badge == "A" ? color.new(#00C853, 40) : quality_badge == "B" ? cell_wait : quality_badge == "C" ? cell_exit : cell_off
