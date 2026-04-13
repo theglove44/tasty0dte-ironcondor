@@ -267,8 +267,9 @@ async def main():
                 logger.info(f"New trading day: {today}")
 
             # Launch ORB Stacking at 14:30 UK (market open) to collect ORB
+            # Range check (not exact minute) so a mid-session restart still launches it
             current_time = now_uk.time()
-            if (current_time.hour == 14 and current_time.minute == 30 and not popper_started_today):
+            if (not popper_started_today and time(14, 30) <= current_time < time(21, 0)):
                 popper_started_today = True
                 logger.info("Launching ORB Stacking background task...")
                 asyncio.create_task(run_orb_stacking(session))
