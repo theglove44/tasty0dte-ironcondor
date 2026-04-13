@@ -35,7 +35,6 @@ in_orb60_win  = et_t >= 930 and et_t <= 1025
 is_orb20_lock = et_t == 945
 is_orb30_lock = et_t == 955
 is_orb60_lock = et_t == 1025
-int BAR_MS = 5 * 60 * 1000
 
 var float orb20_hi        = na
 var float orb20_lo        = na
@@ -81,12 +80,18 @@ var int    quality_score    = na
 var bool   double_active    = false
 var bool   time_exit_fired  = false
 var bool   skip_label_fired = false
+var bool   half_label_fired   = false
+var bool   normal_label_fired = false
+var bool   plus_label_fired   = false
 var line   pt_line          = na
 var line   sl_line          = na
 var label  double_label     = na
 var label  skip_label       = na
 var label  time_exit_label  = na
 var label  hard_exit_label  = na
+var label  half_label       = na
+var label  normal_label     = na
+var label  plus_label       = na
 
 if is_new_session
     orb20_hi        := na
@@ -117,9 +122,15 @@ if is_new_session
     orb30_lock_bar  := na
     orb60_lock_bar  := na
 
+    box.delete(orb20_box)
+    box.delete(orb20_bull_zone)
+    box.delete(orb20_bear_zone)
     orb20_box       := na
     orb20_bull_zone := na
     orb20_bear_zone := na
+    line.delete(orb20_hi_line)
+    line.delete(orb20_lo_line)
+    line.delete(orb20_mid_line)
     orb20_hi_line   := na
     orb20_lo_line   := na
     orb20_mid_line  := na
@@ -131,12 +142,27 @@ if is_new_session
     double_active    := false
     time_exit_fired  := false
     skip_label_fired := false
+    half_label_fired   := false
+    normal_label_fired := false
+    plus_label_fired   := false
+    line.delete(pt_line)
+    line.delete(sl_line)
     pt_line          := na
     sl_line          := na
+    label.delete(double_label)
+    label.delete(skip_label)
+    label.delete(time_exit_label)
+    label.delete(hard_exit_label)
+    label.delete(half_label)
+    label.delete(normal_label)
+    label.delete(plus_label)
     double_label     := na
     skip_label       := na
     time_exit_label  := na
     hard_exit_label  := na
+    half_label       := na
+    normal_label     := na
+    plus_label       := na
 
 if in_orb20_win
     orb20_hi := na(orb20_hi) ? high : math.max(orb20_hi, high)
@@ -253,7 +279,27 @@ bool is_witching = array.includes(_witching, _day_int)
 bool is_opex     = array.includes(_opex, _day_int)
 bool is_opex_only = is_opex and not is_witching
 
-bool double_rising = stack_tier == "DOUBLE" and stack_tier[1] != "DOUBLE"
+bool _half_rising   = stack_tier == "HALF"   and stack_tier[1] != "HALF"
+bool _normal_rising = stack_tier == "NORMAL" and stack_tier[1] != "NORMAL"
+bool _plus_rising   = stack_tier == "PLUS"   and stack_tier[1] != "PLUS"
+bool double_rising  = stack_tier == "DOUBLE" and stack_tier[1] != "DOUBLE"
+
+if _half_rising and not half_label_fired and _draw
+    float _y = direction == 1 ? low : high
+    color _bg = direction == 1 ? c_bull : c_bear
+    half_label := label.new(bar_index, _y, "HALF\nORB20 Break", xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_up : label.style_label_down), color=_bg, textcolor=color.white, size=size.small)
+    half_label_fired := true
+
+if _normal_rising and not normal_label_fired and _draw
+    float _y = direction == 1 ? low : high
+    color _bg = direction == 1 ? c_bull : c_bear
+    normal_label := label.new(bar_index, _y, "NORMAL\nORB30 Confirm", xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_up : label.style_label_down), color=_bg, textcolor=color.white, size=size.small)
+    normal_label_fired := true
+
+if _plus_rising and not plus_label_fired and _draw
+    float _y = direction == 1 ? low : high
+    plus_label := label.new(bar_index, _y, "PLUS\nPartial Align", xloc=xloc.bar_index, yloc=yloc.price, style=(direction == 1 ? label.style_label_up : label.style_label_down), color=color.new(#FF9800, 0), textcolor=color.white, size=size.small)
+    plus_label_fired := true
 
 if double_rising
     int _month_now   = month(time, "America/New_York")
