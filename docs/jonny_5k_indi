@@ -8,6 +8,7 @@ string GRP_T = "── Trade ──"
 show_orb20         = input.bool(true,  "Show ORB20 box",           group=GRP_D)
 show_mid           = input.bool(true,  "Show ORB20 midpoint line",  group=GRP_D)
 show_levels        = input.bool(true,  "Extend ORB H/L lines",      group=GRP_D)
+show_atr           = input.bool(true,  "Show ATR envelope lines",   group=GRP_D)
 show_signals       = input.bool(true,  "Show signal panel",         group=GRP_D)
 show_fomc          = input.bool(true,  "Highlight FOMC days",       group=GRP_D)
 show_lookback_days = input.int(7,      "History: days to draw",     minval=1, maxval=60, group=GRP_D)
@@ -19,6 +20,7 @@ c_orb20_line = input.color(color.new(#2196F3,  0), "ORB20 line",    group=GRP_C)
 c_bull       = input.color(#00C853,               "Bull signal",    group=GRP_C)
 c_bear       = input.color(#D50000,               "Bear signal",    group=GRP_C)
 c_mid_line   = input.color(color.new(#90CAF9,  0), "ORB20 mid line",group=GRP_C)
+c_atr_line   = input.color(color.new(#B0BEC5, 40), "ATR envelope",  group=GRP_C)
 c_pt         = input.color(#00C853,               "PT line",        group=GRP_C)
 c_sl         = input.color(#D50000,               "SL line",        group=GRP_C)
 
@@ -70,8 +72,11 @@ var box   orb20_bear_zone = na
 var line  orb20_hi_line   = na
 var line  orb20_lo_line   = na
 var line  orb20_mid_line  = na
+var line  atr_hi_line    = na
+var line  atr_lo_line    = na
+var float atr14_val      = na
 
-var table signal_panel = table.new(position.bottom_right, 2, 10, border_width=1)
+var table signal_panel = table.new(position.bottom_right, 2, 11, border_width=1)
 
 var float  short_strike     = na
 var float  long_strike      = na
@@ -134,6 +139,11 @@ if is_new_session
     orb20_hi_line   := na
     orb20_lo_line   := na
     orb20_mid_line  := na
+    line.delete(atr_hi_line)
+    line.delete(atr_lo_line)
+    atr_hi_line    := na
+    atr_lo_line    := na
+    atr14_val      := na
 
     short_strike     := na
     long_strike      := na
@@ -181,6 +191,7 @@ if is_orb20_lock and not na(orb20_hi) and barstate.isconfirmed
     orb20_mid      := (orb20_hi + orb20_lo) / 2.0
     float _r = orb20_hi - orb20_lo
     orb20_close_pct := _r > 0.0 ? (close - orb20_lo) / _r : na
+    atr14_val := ta.atr(14)
 
 if is_orb30_lock and not na(orb30_hi) and barstate.isconfirmed
     orb30_lock_bar := bar_index
@@ -256,6 +267,7 @@ if stack_tier != "FLAT" and stack_tier != "EXITED" and orb60_oppose
 float _r20 = not na(orb20_hi) ? orb20_hi - orb20_lo : na
 float _r60 = not na(orb60_hi) ? orb60_hi - orb60_lo : na
 float range_exp_ratio = not na(_r20) and _r20 > 0 and not na(_r60) ? _r60 / _r20 : na
+float orb_atr_ratio = not na(_r20) and not na(atr14_val) and atr14_val > 0 ? _r20 / atr14_val : na
 
 int _day_int = year(time, "America/New_York") * 10000 + month(time, "America/New_York") * 100 + dayofmonth(time, "America/New_York")
 bool _draw   = time >= timenow - show_lookback_days * 86400000
@@ -385,6 +397,22 @@ if _xmid
         line.set_xy1(orb20_mid_line, session_start_bar, orb20_mid)
         line.set_xy2(orb20_mid_line, bar_index+1, orb20_mid)
 
+bool _xatr = show_atr and _draw and not na(orb20_mid) and not na(atr14_val) and et_t >= 950 and et_t <= 1555 and not na(session_start_bar)
+
+if _xatr
+    float _atr_hi = orb20_mid + atr14_val / 2.0
+    float _atr_lo = orb20_mid - atr14_val / 2.0
+    if na(atr_hi_line)
+        atr_hi_line := line.new(session_start_bar, _atr_hi, bar_index+1, _atr_hi, xloc=xloc.bar_index, extend=extend.none, color=c_atr_line, width=1, style=line.style_dotted)
+    else
+        line.set_xy1(atr_hi_line, session_start_bar, _atr_hi)
+        line.set_xy2(atr_hi_line, bar_index+1, _atr_hi)
+    if na(atr_lo_line)
+        atr_lo_line := line.new(session_start_bar, _atr_lo, bar_index+1, _atr_lo, xloc=xloc.bar_index, extend=extend.none, color=c_atr_line, width=1, style=line.style_dotted)
+    else
+        line.set_xy1(atr_lo_line, session_start_bar, _atr_lo)
+        line.set_xy2(atr_lo_line, bar_index+1, _atr_lo)
+
 if double_rising and _draw
     string _arrow = direction == 1 ? "▲" : "▼"
     float _y = direction == 1 ? low : high
@@ -459,6 +487,9 @@ color  orb20_range_bg  = not na(orb20_hi) ? cell_on : cell_off
 string exp_txt = not na(range_exp_ratio) ? str.tostring(range_exp_ratio, "#.##") + "×" : "—"
 color  exp_bg  = not na(range_exp_ratio) ? (range_exp_ratio >= 1.5 ? cell_on : cell_warn) : cell_off
 
+string atr_txt = not na(orb_atr_ratio) ? str.tostring(orb_atr_ratio, "#.##") : "—"
+color  atr_bg  = not na(orb_atr_ratio) ? (orb_atr_ratio < 0.20 ? cell_on : orb_atr_ratio <= 0.40 ? cell_warn : cell_exit) : cell_off
+
 if barstate.islast and show_signals and _draw
     color _fomc_bg = is_fomc ? color.new(#FFEB3B, 75) : color.new(color.black, 100)
     table.cell(signal_panel, 0, 0, is_fomc ? "⚠  FOMC DAY" : "", text_color=color.new(#FFEB3B, 0), bgcolor=_fomc_bg, text_halign=text.align_center)
@@ -481,5 +512,7 @@ if barstate.islast and show_signals and _draw
     table.cell(signal_panel, 1, 8, orb20_range_txt, text_color=txt_col, bgcolor=orb20_range_bg,  text_halign=text.align_center)
     table.cell(signal_panel, 0, 9, "Expansion",     text_color=txt_col, bgcolor=panel_bg, text_halign=text.align_left)
     table.cell(signal_panel, 1, 9, exp_txt,         text_color=txt_col, bgcolor=exp_bg,   text_halign=text.align_center)
+    table.cell(signal_panel, 0, 10, "ORB/ATR",      text_color=txt_col, bgcolor=panel_bg, text_halign=text.align_left)
+    table.cell(signal_panel, 1, 10, atr_txt,         text_color=txt_col, bgcolor=atr_bg,   text_halign=text.align_center)
 else if barstate.islast
-    table.clear(signal_panel, 0, 0, 1, 9)
+    table.clear(signal_panel, 0, 0, 1, 10)

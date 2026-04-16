@@ -46,7 +46,22 @@ A light blue dashed horizontal line through the middle of the ORB20 box. **This 
 
 After the box locks at 09:50, two solid blue horizontal lines extend rightwards from the ORB20 high and low, all the way to 15:55 ET. These are your reference levels for the rest of the day. When price crosses the high line going up, that is the ORB20 breakout. **These are the only horizontal ORB lines on your chart.** There are no 30-minute or 60-minute range lines drawn. The system uses those internally to confirm the setup, but they never appear as drawings.
 
-## Section 8 — HALF, NORMAL, PLUS labels
+## Section 8 — The ATR envelope lines
+
+### The dotted gray lines — ATR-based volatility envelope
+
+After ORB20 locks at 09:50 ET, two dotted gray horizontal lines appear symmetrically around the ORB20 midpoint. These lines represent the Average True Range (ATR) over the last 14 bars, placed ±ATR/2 from the midpoint. These lines give you a quick visual sense of current volatility around the trade midpoint.
+
+The indicator also displays the **ORB/ATR ratio** in the status panel Row 10. This ratio compares the ORB20 range to ATR:
+- **Green (< 0.20):** tight opening range. The day has room to trend. Best conditions for a clean breakout.
+- **Amber (0.20–0.40):** normal opening range relative to volatility.
+- **Red (> 0.40):** the opening range already consumed a large share of expected volatility. Lower probability of a clean continuation trend.
+
+The ATR envelope is context only. It is never a reason to skip a valid DOUBLE signal. Its primary use is helping you prioritise which DOUBLE to spend a day trade on when you have multiple DOUBLE setups in a week and limited PDT slots. When multiple DOUBLEs appear in a rolling 5-day window, prefer the day where the ORB/ATR ratio is lowest (tightest range).
+
+The envelope lines themselves are optional visual reference. The ORB/ATR ratio in the panel is the key metric.
+
+## Section 9 — HALF, NORMAL, PLUS labels
 
 ### Signal labels that require no action
 
@@ -54,7 +69,7 @@ Three labels appear during the morning as the system's confidence builds. They a
 
 Order of appearance: HALF when ORB20 breaks (earliest 09:50), NORMAL when ORB30 confirms (earliest 10:00), then at the ORB60 check (earliest 10:30) the tier becomes either **PLUS** (partial close alignment — no trade) or **DOUBLE** (full alignment — trade). PLUS and DOUBLE are two alternative outcomes of the same final check. A session that shows PLUS will never then progress to DOUBLE. **Only DOUBLE is a trade signal.**
 
-## Section 9 — The DOUBLE entry arrow
+## Section 10 — The DOUBLE entry arrow
 
 ### The DOUBLE arrow — the only signal that requires action
 
@@ -66,7 +81,7 @@ The only label that requires action. It fires once, on the 10:30 ET candle at th
 
 Reading our example: if the label says `` `▲ ENTER` `` / `` `BULL PUT SPREAD` `` / `` `Short: 5200 / Long: 5195` ``, this means: sell the 5200 put, buy the 5195 put, same expiry (today).
 
-## Section 10 — The green PT line
+## Section 11 — The green PT line
 
 ### The green dashed line — PT (short strike level)
 
@@ -76,43 +91,43 @@ This green line is not your profit target in dollars. Your profit target in doll
 
 For a bull put spread at 5200/5195, the green line sits at 5200. As long as SPX stays **above** this line, the spread is decaying in your favour. If SPX crosses **down** through it, your short leg is starting to go in the money. For a bear call spread, the green line is at the short call strike — SPX must stay **below** it.
 
-## Section 11 — The red SL line
+## Section 12 — The red SL line
 
 ### The red dashed line — SL (long strike level)
 
 A **red dashed horizontal line** at the **long strike**, extending to 15:50 ET. For a bull put spread at 5200/5195, the red line sits at 5195. This is the blow-up level. If SPX falls to 5195, the spread is at or near maximum loss. You should never see this because your $2.00 stop exits long before price reaches the red line. For a bear call spread, the red line is at the long call strike.
 
-## Section 12 — SKIP: WITCHING
+## Section 13 — SKIP: WITCHING
 
 ### `` `⛔ SKIP: WITCHING` `` — stay out
 
 An orange label that appears at the session open on triple or quadruple witching days — four Fridays per year (March, June, September, December). Win rate on these days drops to around 58%. **Action: do not trade today, regardless of what any other part of the indicator shows.** Close TradingView. Do something else.
 
-## Section 13 — CAUTION: OPEX
+## Section 14 — CAUTION: OPEX
 
 ### `` `⚠ CAUTION: OPEX` `` — extra care
 
 A yellow label on monthly options expiry Fridays that are not witching days. Not a skip day, but volatility can be unpredictable. **Action: if DOUBLE fires, you may trade — but be extra strict on your stop, and do not chase a re-entry if stopped.**
 
-## Section 14 — HARD EXIT
+## Section 15 — HARD EXIT
 
 ### `` `⚠ HARD EXIT` `` — close immediately
 
 A red label reading `` `⚠ HARD EXIT / ORB60 OPPOSE` ``. Fires when the system detects the trend has reversed against your open trade. **Action: immediately switch to TastyTrade and close the position at market price, no matter what price is showing.** Do not hope for a bounce. Do not wait for the time exit. Positions that get a HARD EXIT signal and are held usually end at maximum loss.
 
-## Section 15 — TIME EXIT
+## Section 16 — TIME EXIT
 
 ### `` `⏰ TIME EXIT` `` — close at 15:30
 
 Appears at 15:30 ET if you have a DOUBLE trade still open. Text: `` `⏰ TIME EXIT / Close now` ``. **Action: close the spread manually on TastyTrade.** Reason: 0DTE options can swing wildly in the last 30 minutes. Locking in whatever you have is safer than gambling on the close.
 
-## Section 16 — FOMC background
+## Section 17 — FOMC background
 
 ### Yellow background — FOMC day
 
 On Federal Reserve announcement days, the chart background turns pale yellow from 09:30 to 16:00 ET. FOMC days are the best day of the year for this strategy. If DOUBLE fires on an FOMC day, that is your best possible setup. Trade it with normal size, normal rules.
 
-## Section 17 — The status panel
+## Section 18 — The status panel
 
 ### The status panel — your dashboard
 
@@ -170,7 +185,18 @@ How wide the opening 20-minute range was in SPX points. Under 15 points = tight 
 
 How much the range has grown since 09:50. Green if ≥1.5× — genuine trending day. Amber if under 1.5× — the market may have stalled.
 
-## Section 18 — Live session walkthrough
+#### Row 10 — ORB/ATR
+
+The ratio of ORB20 range to current ATR(14). Three colours:
+- **Green (< 0.20):** tight opening range. The day has room to trend. Best conditions for a clean breakout.
+- **Amber (0.20–0.40):** normal opening range relative to volatility.
+- **Red (> 0.40):** the opening range already consumed a large share of expected volatility. Lower probability of a clean continuation trend.
+
+This row is context only. It is never a reason to skip a valid DOUBLE signal.
+
+This ratio appears only after ORB20 locks at 09:50. Shows `—` before that.
+
+## Section 19 — Live session walkthrough
 
 ### A day on the chart — minute by minute
 
@@ -185,7 +211,7 @@ How much the range has grown since 09:50. Green if ≥1.5× — genuine trending
 - **11:00–15:00 ET.** SPX holds above 5200. The spread decays. At some point the GTC buyback fills at $0.50. **Net profit: +$50. Position flat. Done for the day.**
 - **Alternative ending.** If the GTC never filled by 15:30: the `` `⏰ TIME EXIT / Close now` `` label appears. Close the spread manually at whatever mid price is showing. If the spread is at $0.40, you keep $60. If $0.70, you keep $30. Either way, flat before 15:31.
 
-## Section 19 — Common mistakes
+## Section 20 — Common mistakes
 
 ### Common mistakes — read this carefully
 
