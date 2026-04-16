@@ -186,12 +186,14 @@ if in_orb60_win
     orb60_hi := na(orb60_hi) ? high : math.max(orb60_hi, high)
     orb60_lo := na(orb60_lo) ? low  : math.min(orb60_lo, low)
 
+float _atr_live = ta.atr(14)
+
 if is_orb20_lock and not na(orb20_hi) and barstate.isconfirmed
     orb20_lock_bar := bar_index
     orb20_mid      := (orb20_hi + orb20_lo) / 2.0
     float _r = orb20_hi - orb20_lo
     orb20_close_pct := _r > 0.0 ? (close - orb20_lo) / _r : na
-    atr14_val := ta.atr(14)
+    atr14_val := _atr_live
 
 if is_orb30_lock and not na(orb30_hi) and barstate.isconfirmed
     orb30_lock_bar := bar_index
