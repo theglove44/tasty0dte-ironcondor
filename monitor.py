@@ -3,7 +3,7 @@ import re
 import pandas as pd
 import logging
 import pytz
-from datetime import datetime, time
+from datetime import datetime, time, date
 from decimal import Decimal
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.dxfeed import Quote, Summary
@@ -14,6 +14,29 @@ try:
 except Exception:
     discord_notify = None
 logger = logging.getLogger("0dte-monitor")
+
+# Multi-day strategy support
+MULTI_DAY_STRATEGY_PREFIXES: tuple[str, ...] = ("JadeLizard_",)
+
+
+def _is_multi_day(strategy_name: str) -> bool:
+    """Return True if strategy is multi-day (exempt from 0DTE stale/EOD logic)."""
+    return any(strategy_name.startswith(p) for p in MULTI_DAY_STRATEGY_PREFIXES)
+
+
+def _parse_target_expiry_from_notes(notes: str) -> date | None:
+    """Extract target_expiry=YYYY-MM-DD from a Notes string. None if absent."""
+    try:
+        if not notes:
+            return None
+        segments = str(notes).split(';')
+        for seg in segments:
+            if seg.startswith('target_expiry='):
+                expiry_str = seg.split('=')[1]
+                return date.fromisoformat(expiry_str)
+        return None
+    except Exception:
+        return None
 
 
 async def _cache_spx_price(session: Session) -> None:
@@ -193,9 +216,13 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
     # Filter for OPEN trades
     open_trades = df[df['Status'] == 'OPEN']
 
-    # Auto-expire stale 0DTE trades from prior days
+    # Auto-expire stale 0DTE trades from prior days (skip multi-day strategies)
     today_str = datetime.now().strftime('%Y-%m-%d')
-    stale_mask = (df['Status'] == 'OPEN') & (df['Date'].astype(str) < today_str)
+    stale_mask = (
+        (df['Status'] == 'OPEN')
+        & (df['Date'].astype(str) < today_str)
+        & (~df['Strategy'].astype(str).apply(_is_multi_day))
+    )
     if stale_mask.any():
         _ensure_text_columns(df)
         for idx in df[stale_mask].index:
@@ -431,26 +458,32 @@ async def check_open_positions(session: Session, csv_path: str = "paper_trades.c
             
             is_time_exit = False
             time_exit_label = ""
-            # Time exit at 18:00 UK for 30 Delta and Iron Flies
-            if strategy_name in ["30 Delta", "Iron Fly V1", "Iron Fly V2", "Iron Fly V3", "Iron Fly V4"]:
-                if now_uk.time() >= time(18, 0):
-                    is_time_exit = True
-                    time_exit_label = "18:00"
-            # Time exit at 20:55 UK for Dynamic 0DTE
-            elif strategy_name == "Dynamic 0DTE":
-                if now_uk.time() >= time(20, 55):
-                    is_time_exit = True
-                    time_exit_label = "20:55"
-            # Time exit at 19:50 UK for Premium Popper
-            elif strategy_name == "Premium Popper":
-                if now_uk.time() >= time(19, 50):
-                    is_time_exit = True
-                    time_exit_label = "19:50"
-            # Time exit at 19:50 UK for ORB-STACK
-            elif strategy_name.startswith("ORB-STACK"):
-                if now_uk.time() >= time(19, 50):
-                    is_time_exit = True
-                    time_exit_label = "19:50"
+
+            # Multi-day strategies (e.g. Jade Lizard) don't use time exits
+            if _is_multi_day(strategy_name):
+                is_time_exit = False
+                time_exit_label = ""
+            else:
+                # Time exit at 18:00 UK for 30 Delta and Iron Flies
+                if strategy_name in ["30 Delta", "Iron Fly V1", "Iron Fly V2", "Iron Fly V3", "Iron Fly V4"]:
+                    if now_uk.time() >= time(18, 0):
+                        is_time_exit = True
+                        time_exit_label = "18:00"
+                # Time exit at 20:55 UK for Dynamic 0DTE
+                elif strategy_name == "Dynamic 0DTE":
+                    if now_uk.time() >= time(20, 55):
+                        is_time_exit = True
+                        time_exit_label = "20:55"
+                # Time exit at 19:50 UK for Premium Popper
+                elif strategy_name == "Premium Popper":
+                    if now_uk.time() >= time(19, 50):
+                        is_time_exit = True
+                        time_exit_label = "19:50"
+                # Time exit at 19:50 UK for ORB-STACK
+                elif strategy_name.startswith("ORB-STACK"):
+                    if now_uk.time() >= time(19, 50):
+                        is_time_exit = True
+                        time_exit_label = "19:50"
 
             status_lines.append(f"Trade {index} [{description}]: Credit={initial_credit:.2f}, Current Debit={debit_to_close:.2f}, P/L={current_profit:.2f}, Target={profit_target:.2f}{iv_rank_str}")
 
@@ -502,6 +535,7 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
     """
     Checks for End-Of-Day expiration.
     If time is past market close (21:00 UK), expire OPEN trades.
+    Multi-day strategies skip EOD until target_expiry date is reached.
     """
     if not is_market_closed():
         return
@@ -514,12 +548,12 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
     # Filter for OPEN trades that are TODAY (or older)
     # Actually, all OPEN trades should likely be closed if it's 0DTE logic.
     open_trades = df[df['Status'] == 'OPEN']
-    
+
     if open_trades.empty:
         return
 
     logger.info("Market Closed. Checking for EOD Expirations...")
-    
+
     # Use Summary event for closing price (works after market close)
     spx_price = await strategy_mod.get_spx_close(session, timeout_s=5)
 
@@ -528,11 +562,29 @@ async def check_eod_expiration(session: Session, csv_path: str = "paper_trades.c
         return
 
     logger.info(f"SPX Closing Price for Expiration: {spx_price}")
-    
+
+    today = date.today()
     _ensure_text_columns(df)
     trades_expired = 0
     for index, row in open_trades.iterrows():
         try:
+            # Multi-day strategy check: skip EOD until target_expiry reached
+            strategy_name = row.get('Strategy', '') if 'Strategy' in row else ''
+            if pd.isna(strategy_name):
+                strategy_name = ''
+
+            if _is_multi_day(str(strategy_name)):
+                expiry = _parse_target_expiry_from_notes(str(row.get('Notes', '')))
+                if expiry is None:
+                    logger.warning(f"JadeLizard trade {index} has no target_expiry in notes, skipping EOD settle")
+                    continue
+                if expiry > today:
+                    logger.debug(f"JadeLizard trade {index} target_expiry={expiry} not yet reached, skipping")
+                    continue
+                if expiry < today:
+                    logger.warning(f"JadeLizard trade {index} target_expiry={expiry} missed, settling now")
+                # fall through to settlement logic
+
             has_call_side = row['Short Call'] != 'NONE'
             has_put_side = row['Short Put'] != 'NONE'
 

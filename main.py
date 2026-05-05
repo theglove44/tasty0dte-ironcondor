@@ -63,6 +63,10 @@ STRATEGY_CONFIGS = [
     {'name': "Premium Popper", 'code': "PP-ORB", 'type': 'premium_popper',
      'allowed_times': [time(13, 30)],
      'profit_target_pct': 0.50},
+    # Jade Lizard: short put + bear call spread, zero upside risk, 25% profit target
+    {'name': "JadeLizard_5DTE", 'code': "JL5", 'type': 'jade_lizard', 'target_dte': 5, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0)]},
+    {'name': "JadeLizard_7DTE", 'code': "JL7", 'type': 'jade_lizard', 'target_dte': 7, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0)]},
+    {'name': "JadeLizard_10DTE", 'code': "JL10", 'type': 'jade_lizard', 'target_dte': 10, 'profit_target_pct': 0.25, 'allowed_times': [time(15, 0)]},
     # Removed 2026-03-22 after performance review (510 trades, Dec 2025 - Mar 2026):
     # - 20 Delta IC: -$2,086, 0.09 win/loss ratio despite 90.6% WR
     # - 30 Delta IC: -$4,351, deteriorating monthly (Jan +$6k -> Mar -$6k)
@@ -92,27 +96,51 @@ def _build_strategy_id(strategy_name, trigger_time):
 async def execute_trade_cycle(session: Session, trigger_time: time = None):
     """Execute one trade cycle for all strategies at the given trigger time."""
     logger.info(f"Starting trade cycle for {trigger_time}...")
-    
+
+    # === JADE LIZARD: Independent execution (fetches its own chain) ===
+    # Runs BEFORE 0DTE chain fetch, so it doesn't get blocked by missing 0DTE expiries.
+    jade_lizard_opened = False
+    from jade_lizard import execute_jade_lizard
+    for strat in STRATEGY_CONFIGS:
+        if strat['type'] != 'jade_lizard':
+            continue
+        allowed_times = strat.get('allowed_times')
+        if not jade_lizard_opened and _is_trigger_time_allowed(allowed_times, trigger_time):
+            opened = await execute_jade_lizard(
+                session=session,
+                target_dte=strat['target_dte'],
+                strategy_name=strat['name'],
+                strategy_id=strat.get('code', 'JL'),
+                profit_target_pct=strat.get('profit_target_pct', 0.25),
+            )
+            if opened:
+                jade_lizard_opened = True
+
+    # === 0DTE STRATEGIES: Require 0DTE expiration ===
     # Fetch chain
     chain = await strategy.fetch_spx_option_chain(session)
     exp = strategy.filter_for_0dte(chain)
     if not exp:
-        logger.warning("No 0DTE expiration found. Skipping cycle.")
+        logger.warning("No 0DTE expiration found. Skipping 0DTE cycle.")
         return
 
     iv_rank = await strategy.fetch_spx_iv_rank(session)
-    
+
     # Cache SPX price for fallback (used by Dynamic 0DTE strategy)
     spx_spot = await strategy.get_spx_spot(session, timeout_s=5)
     if spx_spot:
         strategy.save_spx_price(spx_spot)
-    
+
     for strat in STRATEGY_CONFIGS:
         strat_name = strat['name']
         strat_type = strat['type']
 
         # Premium Popper runs as its own background task, not through trade cycle
         if strat_type == 'premium_popper':
+            continue
+
+        # Jade Lizard already handled above — skip here
+        if strat_type == 'jade_lizard':
             continue
 
         target_delta = strat.get('target_delta', 0)
@@ -123,7 +151,7 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
             continue
 
         logger.info(f"Executing: {strat_name} (Delta {target_delta})")
-        
+
         # Find legs
         legs = None
         notes_extra = ""
@@ -157,7 +185,7 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
         if not legs:
             logger.warning(f"[{strat_name}] Could not find suitable legs.")
             continue
-            
+
         # Calculate credit & risk
         credit = (legs['short_call']['price'] + legs['short_put']['price']) - \
                  (legs['long_call']['price'] + legs['long_put']['price'])
