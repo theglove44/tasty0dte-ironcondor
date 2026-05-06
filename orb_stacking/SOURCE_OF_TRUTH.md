@@ -172,6 +172,8 @@ This is a separate quality score evaluated at the ORB20 lock, additive to the st
 
 **Combined sizing:** A DOUBLE-grade base setup that ALSO clears full stacking + close alignment is the maximum-conviction trade. The two scores are independent and additive — the roadmap will define how they combine into a single contract count.
 
+**ATR14 data source (2026-04-17):** Per Doc1 §7 line 59, ATR(14) is the 14-period average true range computed from DAILY ranges of the 14 preceding completed sessions. The ORB Stacking engine does NOT compute ATR from 5-minute bars; daily bars are fetched separately by the live runner (`fetch_daily_bars` in `bar_fetcher.py`) and fed to `engine._atr.update` once during morning warmup. The backtest aggregates 5m CSV sessions into daily O/H/L/C bars for the same purpose. The TradingView indicator uses `request.security(syminfo.tickerid, "D", ta.atr(14)[1], lookahead=barmerge.lookahead_off)` so intraday bars read yesterday's completed daily ATR (no lookahead).
+
 ---
 
 ## 3. Dead Ends — Do NOT Build (Doc4)

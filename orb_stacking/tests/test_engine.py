@@ -127,12 +127,12 @@ class TestOrbStackingEngine(unittest.TestCase):
         self.assertIsNone(intent.orb30)
         self.assertIsNone(intent.orb60)
 
-    def test_orb20_break_atr_not_ready_emits_api_error(self):
+    def test_orb20_break_atr_not_ready_emits_atr_not_ready_skip(self):
         engine = OrbStackingEngine()
         results = _feed_session(engine, _bull_orb20_break_bars())
         skips = _find_skips(results)
         self.assertEqual(len(skips), 1)
-        self.assertEqual(skips[0].reason, "api_error")
+        self.assertEqual(skips[0].reason, "atr_not_ready")
         self.assertIn("atr_not_ready", skips[0].notes)
 
     def test_orb30_confirm_emits_normal_intent(self):

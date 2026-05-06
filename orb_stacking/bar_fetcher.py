@@ -15,12 +15,14 @@ Bar format: dict with keys {time, start, open, high, low, close}
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 import pytz
 
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.dxfeed import Candle
+
+from orb_stacking.time_utils import to_et
 
 
 UK_TZ = pytz.timezone('Europe/London')
@@ -30,6 +32,12 @@ DEFAULT_INTERVAL = "5m"
 DEFAULT_LOOKBACK_DAYS = 2
 WARMUP_LISTEN_SECONDS = 20
 WARMUP_MIN_BARS = 30
+
+# Daily-bar fetcher for ATR(14) warmup
+DAILY_INTERVAL = "1d"
+DAILY_LOOKBACK_CALENDAR_DAYS = 30
+DAILY_WARMUP_LISTEN_SECONDS = 20
+MIN_DAILY_BARS_FOR_ATR = 14
 
 # Maximum calendar gap between consecutive US trading days (Mon after Easter:
 # Fri + Mon both holidays → last trade was Thu = 4 calendar days back).
@@ -89,6 +97,75 @@ def is_garbage_bar(bar: dict) -> bool:
 def clean_and_sort(bars_by_time: dict) -> list[dict]:
     """Sort a {time: bar} dict into a list ordered by timestamp."""
     return sorted(bars_by_time.values(), key=lambda b: b['time'])
+
+
+async def fetch_daily_bars(
+    session: Session,
+    symbol: str = "SPX",
+    lookback_calendar_days: int = DAILY_LOOKBACK_CALENDAR_DAYS,
+) -> list[dict]:
+    """Fetch recent completed daily SPX bars for ATR(14) warmup.
+
+    Subscribes with interval="1d" and start_time = now - lookback_calendar_days.
+    Drains events for DAILY_WARMUP_LISTEN_SECONDS, dedupes by timestamp,
+    filters garbage (O=0 or C=0), drops today's still-forming bar
+    (session not yet complete in ET), returns chronologically sorted bars.
+
+    Returns dicts in the same schema as the 5m fetcher: keys
+    {time, start, open, high, low, close}. 'start' is UK_TZ-aware datetime.
+
+    No exceptions raised to caller. On DXLink error returns whatever
+    bars were collected so far (possibly empty list). Caller decides what
+    to do with < MIN_DAILY_BARS_FOR_ATR.
+    """
+    by_time: dict = {}
+    try:
+        start_time = datetime.now(UK_TZ) - timedelta(days=lookback_calendar_days)
+        logger.info(
+            f"Fetching {symbol} daily history from {start_time.isoformat()} "
+            f"(lookback={lookback_calendar_days}d)"
+        )
+
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe_candle([symbol], DAILY_INTERVAL, start_time)
+
+            loop_start = datetime.now()
+            try:
+                async for event in streamer.listen(Candle):
+                    if (datetime.now() - loop_start).total_seconds() > DAILY_WARMUP_LISTEN_SECONDS:
+                        break
+                    events = event if isinstance(event, list) else [event]
+                    for e in events:
+                        if not isinstance(e, Candle):
+                            continue
+                        bar = candle_to_bar(e)
+                        if bar is None or is_garbage_bar(bar):
+                            continue
+                        by_time[bar['time']] = bar
+            except Exception as ex:
+                logger.error(
+                    f"Daily fetch listen error: {type(ex).__name__}: {ex}",
+                    exc_info=True,
+                )
+    except Exception as ex:
+        logger.error(
+            f"Daily fetch setup error: {type(ex).__name__}: {ex}",
+            exc_info=True,
+        )
+
+    bars = clean_and_sort(by_time)
+
+    today_et = to_et(datetime.now(timezone.utc)).date()
+    bars = [b for b in bars if to_et(b['start']).date() < today_et]
+
+    if bars:
+        logger.info(
+            f"Fetched {len(bars)} completed daily bars: "
+            f"{bars[0]['start'].date()} -> {bars[-1]['start'].date()}"
+        )
+    else:
+        logger.warning("No completed daily bars received")
+    return bars
 
 
 class BarFetcher:

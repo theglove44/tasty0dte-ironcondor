@@ -22,6 +22,7 @@ from typing import Iterator, Optional
 import pytz
 
 from orb_stacking.engine import OrbStackingEngine
+from orb_stacking.bar_fetcher import MIN_DAILY_BARS_FOR_ATR
 from orb_stacking.time_utils import to_et
 from orb_stacking.trade_intent import OrbSkipEvent, OrbTradeIntent
 
@@ -83,6 +84,21 @@ def _parse_timestamp(date_str: str, time_str: str) -> Optional[datetime]:
     except pytz.NonExistentTimeError:
         return None
     return localized.astimezone(pytz.UTC)
+
+
+def aggregate_to_daily(session_bars: list[Bar]) -> Bar:
+    """Aggregate a session's 5m bars into a single daily OHLC bar.
+
+    O = first bar's open, H = max of highs, L = min of lows, C = last bar's close.
+    """
+    assert session_bars, "aggregate_to_daily: empty session_bars"
+    return Bar(
+        start=session_bars[0].start,
+        open=session_bars[0].open,
+        high=max(b.high for b in session_bars),
+        low=min(b.low for b in session_bars),
+        close=session_bars[-1].close,
+    )
 
 
 def parse_csv_file(path: Path) -> Iterator[Bar]:
@@ -153,10 +169,10 @@ def _day_favorable(direction: Optional[str], session_open: float, session_close:
 def run_session(
     engine: OrbStackingEngine,
     session_bars: list[Bar],
-    warmup_bars: list[Bar],
+    warmup_daily_bars: list[Bar],
 ) -> SessionResult:
     engine.reset_for_new_session()
-    for warmup_bar in warmup_bars:
+    for warmup_bar in warmup_daily_bars:
         engine._atr.update(warmup_bar.as_dict())
 
     reached_orb20_break = False
@@ -191,7 +207,7 @@ def run_session(
                         direction = event.direction
                 elif event.reason == "no_breakout_before_noon":
                     no_breakout_before_noon = True
-                elif event.reason in {"api_error", "credit_too_low"}:
+                elif event.reason in {"api_error", "atr_not_ready", "credit_too_low"}:
                     aborted = True
                 if direction is None:
                     direction = event.direction
@@ -246,7 +262,7 @@ def aggregate(results: list[SessionResult]) -> dict:
     }
 
 
-def print_report(agg: dict, gate_pass: bool, skipped_sessions: int = 0) -> None:
+def print_report(agg: dict, gate_pass: bool, skipped_sessions: int = 0, warmup_excluded_sessions: int = 0) -> None:
     categories = [
         ("half_only",            "ORB20 break → HALF only"),
         ("plus",                 "  + ORB60 confirms → PLUS"),
@@ -262,6 +278,8 @@ def print_report(agg: dict, gate_pass: bool, skipped_sessions: int = 0) -> None:
     print(f"Sessions processed: {total}")
     if skipped_sessions:
         print(f"Sessions skipped (< {MIN_BARS_PER_SESSION} bars): {skipped_sessions}")
+    if warmup_excluded_sessions:
+        print(f"Sessions excluded for ATR warmup (first 14 sessions): {warmup_excluded_sessions}")
     print()
     print(f"{'Permutation':<38} {'Days':>6} {'%':>6} {'Day-Fav':>8}")
     print("-" * 62)
@@ -301,32 +319,38 @@ def main() -> int:
 
     results: list[SessionResult] = []
     skipped_sessions = 0
-    warmup_sessions: deque[list[Bar]] = deque(maxlen=15)
+    warmup_excluded_sessions = 0
+    warmup_daily_bars: deque[Bar] = deque(maxlen=14)
 
     grouped = itertools.groupby(bars, key=lambda bar: to_et(bar.start).date())
     for session_date, bar_iter in grouped:
         session_bars = list(bar_iter)
         if args.start is not None and session_date.year < args.start:
-            warmup_sessions.append(session_bars)
+            if len(session_bars) >= MIN_BARS_PER_SESSION:
+                warmup_daily_bars.append(aggregate_to_daily(session_bars))
             continue
         if args.end is not None and session_date.year > args.end:
             break
 
-        warmup_bars = [bar for session in warmup_sessions for bar in session]
         if len(session_bars) < MIN_BARS_PER_SESSION:
             skipped_sessions += 1
-            warmup_sessions.append(session_bars)
             continue
 
+        if len(warmup_daily_bars) < 14:
+            warmup_daily_bars.append(aggregate_to_daily(session_bars))
+            warmup_excluded_sessions += 1
+            continue
+
+        warmup_bars = list(warmup_daily_bars)
         results.append(run_session(engine, session_bars, warmup_bars))
-        warmup_sessions.append(session_bars)
+        warmup_daily_bars.append(aggregate_to_daily(session_bars))
 
     agg = aggregate(results)
     gate_pass = (
         agg["plus_rate"] >= GATE_PLUS_THRESHOLD
         and agg["double_rate"] >= GATE_DOUBLE_THRESHOLD
     )
-    print_report(agg, gate_pass, skipped_sessions=skipped_sessions)
+    print_report(agg, gate_pass, skipped_sessions=skipped_sessions, warmup_excluded_sessions=warmup_excluded_sessions)
     return 0 if gate_pass else 1
 
 

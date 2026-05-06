@@ -111,6 +111,7 @@ class TradeIntentTests(unittest.TestCase):
                 "credit_too_low",
                 "credit_too_high_flagged",
                 "api_error",
+                "atr_not_ready",
                 "calendar_blocked",
                 "daily_cap",
                 "bar_gap_during_lock",

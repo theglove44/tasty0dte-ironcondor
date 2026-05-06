@@ -10,9 +10,10 @@ Public interface:
     engine.reset_for_new_session()
 
 Caller responsibilities:
-  - Feed prior-session bars (or call _atr.update directly) to prime ATR(14)
-    before the first ORB20_BREAK of each session.
-  - Bars must have keys: "start" (datetime UTC), "open", "high", "low", "close", "volume"
+  - Call `reset_for_new_session()` FIRST (it wipes `_atr`), THEN feed exactly
+    14 prior DAILY bars to `_atr.update`, THEN call `on_closed_bar`. ATR(14)
+    per Doc1 §7 is a DAILY-range indicator, not a 5m-range indicator.
+  - 5m bars must have keys: "start" (datetime UTC), "open", "high", "low", "close", "volume"
   - Pass bars in chronological order.
 """
 from __future__ import annotations
@@ -86,8 +87,6 @@ class OrbStackingEngine:
             self._session_date = to_et(bar["start"]).date()
             self._cal_score, self._cal_labels = _calendar_score(self._session_date)
 
-        self._atr.update(bar)
-
         # Gap-before-stack ordering contract
         # ─────────────────────────────────
         # `_stacking.on_closed_bar` is called first because gap_reason() is
@@ -154,7 +153,7 @@ class OrbStackingEngine:
             self._aborted = True
             return OrbSkipEvent(
                 timestamp=ev.timestamp,
-                reason="api_error",
+                reason="atr_not_ready",
                 direction=ev.direction,
                 stack_tier=ev.state_snapshot.get("stack_tier", "FLAT"),
                 notes="atr_not_ready",

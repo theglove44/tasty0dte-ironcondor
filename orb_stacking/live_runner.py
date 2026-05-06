@@ -14,7 +14,12 @@ from tastytrade.instruments import OptionType
 from tastytrade.market_data import get_market_data_by_type
 
 from orb_stacking.engine import OrbStackingEngine
-from orb_stacking.bar_fetcher import BarFetcher, trading_lookback_days
+from orb_stacking.bar_fetcher import (
+    BarFetcher,
+    trading_lookback_days,
+    fetch_daily_bars,
+    MIN_DAILY_BARS_FOR_ATR,
+)
 from orb_stacking.trade_intent import OrbTradeIntent, OrbSkipEvent
 from orb_stacking.time_utils import to_et
 
@@ -35,20 +40,17 @@ TERMINAL_SKIP_REASONS = frozenset({"no_breakout_before_noon", "orb60_opposes_har
 
 
 def warmup_engine(engine: OrbStackingEngine, history_bars: list) -> None:
-    """Initialise ATR and ORB state from historical bars.
+    """Initialise ORB state from historical bars.
 
-    Prior-session bars are fed to the ATR only (OrbBuilder is single-session;
-    crossing a date boundary raises ValueError). Today's bars are fed through
-    the full engine so OrbBuilder locks ORB20/30/60 from historical data —
-    preventing bar_gap_during_lock on mid-session restarts.
+    Prior-session bars are skipped (ATR is seeded separately via fetch_daily_bars).
+    Today's bars are fed through the full engine so OrbBuilder locks ORB20/30/60
+    from historical data — preventing bar_gap_during_lock on mid-session restarts.
 
     Return values (intents/skips) from historical bar processing are discarded.
     """
     today_et = to_et(datetime.now(timezone.utc)).date()
     for bar in history_bars:
-        if to_et(bar["start"]).date() < today_et:
-            engine._atr.update(bar)
-        else:
+        if to_et(bar["start"]).date() == today_et:
             engine.on_closed_bar(bar)  # return value intentionally discarded
 
 
@@ -238,6 +240,25 @@ async def run_orb_stacking(session) -> None:
     try:
         logger.info("ORB Stacking: initializing engine and fetcher...")
         engine = OrbStackingEngine()
+
+        # Daily-bar warmup for ATR(14) — per Doc1 §7, ATR(14) is computed
+        # from the last 14 completed daily sessions, not from 5m bars.
+        daily_bars = await fetch_daily_bars(session, symbol="SPX")
+        if len(daily_bars) < MIN_DAILY_BARS_FOR_ATR:
+            logger.error(
+                f"ORB Stacking: only {len(daily_bars)} daily bars available "
+                f"(need {MIN_DAILY_BARS_FOR_ATR}); ATR(14) will not be ready — "
+                f"ORB20_BREAK will emit atr_not_ready skip and abort."
+            )
+        else:
+            seed_bars = daily_bars[-MIN_DAILY_BARS_FOR_ATR:]
+            for bar in seed_bars:
+                engine._atr.update(bar)
+            logger.info(
+                f"ATR(14) seeded from daily bars: {engine._atr.value:.2f} "
+                f"(from {seed_bars[0]['start'].date()} to {seed_bars[-1]['start'].date()})"
+            )
+
         fetcher = BarFetcher("SPX", "5m", lookback_days=trading_lookback_days())
 
         # Fetch and warm up history

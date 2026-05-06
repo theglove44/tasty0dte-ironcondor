@@ -124,17 +124,20 @@ class TestDemoCliPrinters(unittest.TestCase):
         terminal = demo.print_events([skip])
         self.assertFalse(terminal)
 
-    def test_warmup_engine_primes_atr(self) -> None:
+    def test_warmup_engine_today_bars_only(self) -> None:
+        """warmup_engine feeds today's bars to on_closed_bar and drops prior-day bars."""
         engine = OrbStackingEngine()
-        self.assertIsNone(engine._atr.value)
         import datetime as _dt
-        base = _dt.datetime(2026, 4, 8, 9, 30, tzinfo=_dt.timezone.utc)
-        bars = [
-            _bar(base + _dt.timedelta(minutes=5 * i), 6550.0)
-            for i in range(14)
+        now = _dt.datetime.now(_dt.timezone.utc)
+        today_utc = now.replace(hour=14, minute=0, second=0, microsecond=0)
+        prior_bar = _bar(today_utc - _dt.timedelta(days=1), 6550.0)
+        today_bars = [
+            _bar(today_utc + _dt.timedelta(minutes=5 * i), 6550.0)
+            for i in range(3)
         ]
-        demo.warmup_engine(engine, bars)
-        self.assertIsNotNone(engine._atr.value)
+        demo.warmup_engine(engine, [prior_bar] + today_bars)
+        self.assertIsNone(engine._atr.value)
+        self.assertIsNotNone(engine._session_date)
 
     def test_warmup_engine_does_not_emit_session_events(self) -> None:
         """warmup_engine must not trigger on_closed_bar — session state stays blank."""

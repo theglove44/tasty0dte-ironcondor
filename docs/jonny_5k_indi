@@ -186,7 +186,7 @@ if in_orb60_win
     orb60_hi := na(orb60_hi) ? high : math.max(orb60_hi, high)
     orb60_lo := na(orb60_lo) ? low  : math.min(orb60_lo, low)
 
-float _atr_live = ta.atr(14)
+float _atr_live = request.security(syminfo.tickerid, "D", ta.atr(14)[1], lookahead=barmerge.lookahead_off)
 
 if is_orb20_lock and not na(orb20_hi) and barstate.isconfirmed
     orb20_lock_bar := bar_index

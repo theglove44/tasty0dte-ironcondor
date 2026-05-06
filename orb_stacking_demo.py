@@ -19,7 +19,12 @@ from datetime import date, datetime, timezone
 from dotenv import load_dotenv
 from tastytrade import Session
 
-from orb_stacking.bar_fetcher import BarFetcher, trading_lookback_days
+from orb_stacking.bar_fetcher import (
+    BarFetcher,
+    trading_lookback_days,
+    fetch_daily_bars,
+    MIN_DAILY_BARS_FOR_ATR,
+)
 from orb_stacking.engine import OrbStackingEngine
 from orb_stacking.time_utils import to_et, to_uk
 from orb_stacking.trade_intent import OrbSkipEvent, OrbTradeIntent
@@ -59,11 +64,26 @@ def format_skip(skip: OrbSkipEvent) -> str:
 
 
 def warmup_engine(engine: OrbStackingEngine, history_bars: list[dict]) -> None:
+    """Feed today's 5m bars through engine.on_closed_bar. ATR is seeded
+    separately from daily bars via seed_daily_atr."""
+    today_et = to_et(datetime.now(timezone.utc)).date()
     for bar in history_bars:
+        if to_et(bar["start"]).date() == today_et:
+            engine.on_closed_bar(bar)
+
+
+async def seed_daily_atr(session: Session, engine: OrbStackingEngine) -> None:
+    """Fetch and feed daily bars to _atr. Prints a status line."""
+    daily_bars = await fetch_daily_bars(session, symbol=SYMBOL)
+    if len(daily_bars) < MIN_DAILY_BARS_FOR_ATR:
+        print(f"  ATR warmup: only {len(daily_bars)} daily bars available, "
+              f"ATR will be None. ORB20 break will skip with atr_not_ready.")
+        return
+    seed_bars = daily_bars[-MIN_DAILY_BARS_FOR_ATR:]
+    for bar in seed_bars:
         engine._atr.update(bar)
-    value = engine._atr.value
-    value_text = f"{value:.2f}" if value is not None else "None"
-    print(f"  ATR warmup: {len(history_bars)} bars, value={value_text}")
+    print(f"  ATR(14) seeded from {len(seed_bars)} daily bars, "
+          f"value={engine._atr.value:.2f}")
 
 
 def print_events(events: list) -> bool:
@@ -80,7 +100,9 @@ def print_events(events: list) -> bool:
 
 async def run_live(session: Session, engine: OrbStackingEngine) -> None:
     fetcher = BarFetcher(SYMBOL, INTERVAL, lookback_days=DEFAULT_LOOKBACK_DAYS)
-    print("Fetching history for ATR warmup...")
+    print("Seeding ATR(14) from daily bars...")
+    await seed_daily_atr(session, engine)
+    print("Fetching 5m history for engine warmup...")
     history = await fetcher.fetch_history_with_retry(session)
     warmup_engine(engine, history)
     print("Starting live bar stream. Ctrl-C to stop.")
@@ -96,14 +118,42 @@ async def run_live(session: Session, engine: OrbStackingEngine) -> None:
 
 
 async def run_replay(session: Session, target_date: date, engine: OrbStackingEngine) -> None:
+    """Replay a past session. ATR is seeded by aggregating 5m bars into daily
+    OHLC for the 14 completed sessions before target_date, matching backtest
+    semantics."""
     today = to_et(datetime.now(timezone.utc)).date()
-    lookback_days = trading_lookback_days() + (today - target_date).days
+    # Extra calendar days so 5m fetch covers 14+ prior trading sessions
+    lookback_days = trading_lookback_days(n=MIN_DAILY_BARS_FOR_ATR + 4) + (today - target_date).days
     fetcher = BarFetcher(SYMBOL, INTERVAL, lookback_days=lookback_days)
-    print(f"Fetching bars for replay of {target_date}...")
+    print(f"Fetching 5m bars for replay of {target_date}...")
     all_bars = await fetcher.fetch_history_with_retry(session)
-    warmup_bars = [b for b in all_bars if to_et(b["start"]).date() < target_date]
+
+    # Aggregate prior-session 5m bars into daily OHLC, feed last 14 to _atr
+    prior_bars = [b for b in all_bars if to_et(b["start"]).date() < target_date]
+    by_date: dict = {}
+    for bar in prior_bars:
+        d = to_et(bar["start"]).date()
+        if d not in by_date:
+            by_date[d] = {"start": bar["start"], "open": bar["open"],
+                          "high": bar["high"], "low": bar["low"], "close": bar["close"]}
+        else:
+            agg = by_date[d]
+            agg["high"] = max(agg["high"], bar["high"])
+            agg["low"] = min(agg["low"], bar["low"])
+            agg["close"] = bar["close"]
+
+    daily_bars = [by_date[d] for d in sorted(by_date)]
+    if len(daily_bars) >= MIN_DAILY_BARS_FOR_ATR:
+        seed_bars = daily_bars[-MIN_DAILY_BARS_FOR_ATR:]
+        for bar in seed_bars:
+            engine._atr.update(bar)
+        print(f"  ATR(14) seeded from {len(seed_bars)} aggregated daily bars, "
+              f"value={engine._atr.value:.2f}")
+    else:
+        print(f"  ATR warmup: only {len(daily_bars)} prior sessions available, "
+              f"ATR will be None.")
+
     replay_bars = [b for b in all_bars if to_et(b["start"]).date() == target_date]
-    warmup_engine(engine, warmup_bars)
     print(f"Replaying {len(replay_bars)} bars for {target_date}...")
     for bar in replay_bars:
         events = engine.on_closed_bar(bar)

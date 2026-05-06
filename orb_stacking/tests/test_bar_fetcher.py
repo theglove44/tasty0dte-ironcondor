@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 import pytz
+import builtins
 
 from orb_stacking.bar_fetcher import (
     candle_to_bar,
@@ -12,18 +13,23 @@ from orb_stacking.bar_fetcher import (
     DEFAULT_LOOKBACK_DAYS,
     WARMUP_MIN_BARS,
     BarFetcher,
+    Candle,
 )
+
+
+class MockCandle:
+    """Simple mock Candle that looks like a Candle for testing."""
+    def __init__(self, time_ms, o, h, l, c):
+        self.time = time_ms
+        self.open = o
+        self.high = h
+        self.low = l
+        self.close = c
 
 
 def _mock_candle(time_ms, o, h, l, c):
     """Build a mock Candle event with the given OHLC + timestamp."""
-    m = MagicMock()
-    m.time = time_ms
-    m.open = o
-    m.high = h
-    m.low = l
-    m.close = c
-    return m
+    return MockCandle(time_ms, o, h, l, c)
 
 
 class TestCandleToBar(unittest.TestCase):
@@ -220,6 +226,164 @@ class TestFetchHistoryWithRetryAsync(unittest.TestCase):
 
         result = await fetcher.fetch_history_with_retry(session)
         self.assertEqual(len(result), 10)
+
+
+class TestFetchDailyBars(unittest.IsolatedAsyncioTestCase):
+    """Tests for fetch_daily_bars top-level async function."""
+
+    def _setup_mock_streamer(self, mock_streamer_cls, candles):
+        """Set up mock DXLinkStreamer that yields Candle-like mock objects."""
+        mock_streamer = AsyncMock()
+        mock_streamer.__aenter__.return_value = mock_streamer
+        mock_streamer.__aexit__.return_value = None
+        mock_streamer.subscribe_candle = AsyncMock(return_value=None)
+
+        async def _listen(cls):
+            for c in candles:
+                yield c
+
+        mock_streamer.listen = _listen
+        mock_streamer_cls.return_value = mock_streamer
+
+    @patch('orb_stacking.bar_fetcher.candle_to_bar')
+    @patch('orb_stacking.bar_fetcher.DXLinkStreamer')
+    async def test_excludes_today_still_forming_bar(self, mock_streamer_cls, mock_candle_to_bar):
+        """Fetched bars exclude today's still-forming daily bar (ET-date filter)."""
+        from orb_stacking.bar_fetcher import fetch_daily_bars
+        # Use dates firmly in the past so they pass the today_et filter
+        base_date = datetime(2026, 4, 1, 0, 0, 0, tzinfo=pytz.UTC)
+        candles = [
+            _mock_candle(int((base_date.timestamp() - (15 - i) * 86400) * 1000), 6500, 6550, 6490, 6530)
+            for i in range(14)
+        ]
+        # Today's bar (should be filtered)
+        today_ts = int(datetime.now(pytz.UTC).timestamp() * 1000)
+        candles.append(_mock_candle(today_ts, 6540, 6560, 6530, 6550))
+        self._setup_mock_streamer(mock_streamer_cls, candles)
+
+        # Mock candle_to_bar to convert mock candles to dicts
+        def bar_from_candle(c):
+            if c.open is None or c.close is None:
+                return None
+            return {
+                'time': c.time,
+                'start': datetime.fromtimestamp(c.time / 1000, tz=UK_TZ),
+                'open': float(c.open),
+                'high': float(c.high),
+                'low': float(c.low),
+                'close': float(c.close),
+            }
+        mock_candle_to_bar.side_effect = bar_from_candle
+
+        # Patch isinstance to recognize MockCandle as Candle
+        orig_isinstance = builtins.isinstance
+        def patched_isinstance(obj, classinfo):
+            if classinfo is Candle and isinstance(obj, MockCandle):
+                return True
+            return orig_isinstance(obj, classinfo)
+
+        with patch('builtins.isinstance', patched_isinstance):
+            result = await fetch_daily_bars(MagicMock(), symbol="SPX")
+        self.assertEqual(len(result), 14)
+
+    @patch('orb_stacking.bar_fetcher.DXLinkStreamer')
+    async def test_returns_empty_on_no_events(self, mock_streamer_cls):
+        """If DXLink yields no events, returns []."""
+        from orb_stacking.bar_fetcher import fetch_daily_bars
+        self._setup_mock_streamer(mock_streamer_cls, [])
+        result = await fetch_daily_bars(MagicMock(), symbol="SPX")
+        self.assertEqual(result, [])
+
+    @patch('orb_stacking.bar_fetcher.candle_to_bar')
+    @patch('orb_stacking.bar_fetcher.DXLinkStreamer')
+    async def test_filters_garbage_bars(self, mock_streamer_cls, mock_candle_to_bar):
+        """Bars with O=0 or C=0 are filtered out."""
+        from orb_stacking.bar_fetcher import fetch_daily_bars
+        # Use dates firmly in the past so they pass the today_et filter
+        base_date = datetime(2026, 4, 1, 0, 0, 0, tzinfo=pytz.UTC)
+        candles = [
+            _mock_candle(int((base_date.timestamp() - 5 * 86400) * 1000), 0, 0, 0, 0),  # garbage
+            _mock_candle(int((base_date.timestamp() - 4 * 86400) * 1000), 6500, 6550, 6490, 6530),
+            _mock_candle(int((base_date.timestamp() - 3 * 86400) * 1000), 6530, 6570, 6510, 6540),
+            _mock_candle(int((base_date.timestamp() - 2 * 86400) * 1000), 6540, 6560, 6520, 6550),
+        ]
+        self._setup_mock_streamer(mock_streamer_cls, candles)
+
+        # Mock candle_to_bar to convert mock candles to dicts
+        def bar_from_candle(c):
+            if c.open is None or c.close is None:
+                return None
+            return {
+                'time': c.time,
+                'start': datetime.fromtimestamp(c.time / 1000, tz=UK_TZ),
+                'open': float(c.open),
+                'high': float(c.high),
+                'low': float(c.low),
+                'close': float(c.close),
+            }
+        mock_candle_to_bar.side_effect = bar_from_candle
+
+        # Patch isinstance to recognize MockCandle as Candle
+        orig_isinstance = builtins.isinstance
+        def patched_isinstance(obj, classinfo):
+            if classinfo is Candle and isinstance(obj, MockCandle):
+                return True
+            return orig_isinstance(obj, classinfo)
+
+        with patch('builtins.isinstance', patched_isinstance):
+            result = await fetch_daily_bars(MagicMock(), symbol="SPX")
+        self.assertEqual(len(result), 3)
+
+    @patch('orb_stacking.bar_fetcher.candle_to_bar')
+    @patch('orb_stacking.bar_fetcher.DXLinkStreamer')
+    async def test_dedupes_by_timestamp(self, mock_streamer_cls, mock_candle_to_bar):
+        """Duplicate bars (same time) are deduped — last write wins."""
+        from orb_stacking.bar_fetcher import fetch_daily_bars
+        # Use a date firmly in the past so it passes the today_et filter
+        base_date = datetime(2026, 4, 1, 0, 0, 0, tzinfo=pytz.UTC)
+        same_ts = int((base_date.timestamp() - 3 * 86400) * 1000)
+        candles = [
+            _mock_candle(same_ts, 6500, 6550, 6490, 6530),
+            _mock_candle(same_ts, 6500, 6560, 6480, 6540),
+        ]
+        self._setup_mock_streamer(mock_streamer_cls, candles)
+
+        # Mock candle_to_bar to convert mock candles to dicts
+        def bar_from_candle(c):
+            if c.open is None or c.close is None:
+                return None
+            return {
+                'time': c.time,
+                'start': datetime.fromtimestamp(c.time / 1000, tz=UK_TZ),
+                'open': float(c.open),
+                'high': float(c.high),
+                'low': float(c.low),
+                'close': float(c.close),
+            }
+        mock_candle_to_bar.side_effect = bar_from_candle
+
+        # Patch isinstance to recognize MockCandle as Candle
+        orig_isinstance = builtins.isinstance
+        def patched_isinstance(obj, classinfo):
+            if classinfo is Candle and isinstance(obj, MockCandle):
+                return True
+            return orig_isinstance(obj, classinfo)
+
+        with patch('builtins.isinstance', patched_isinstance):
+            result = await fetch_daily_bars(MagicMock(), symbol="SPX")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['high'], 6560)
+        self.assertEqual(result[0]['close'], 6540)
+
+    @patch('orb_stacking.bar_fetcher.DXLinkStreamer')
+    async def test_returns_empty_on_setup_exception(self, mock_streamer_cls):
+        """If DXLinkStreamer construction or __aenter__ raises, returns [] — no propagation."""
+        from orb_stacking.bar_fetcher import fetch_daily_bars
+        mock_streamer = AsyncMock()
+        mock_streamer.__aenter__.side_effect = Exception("connection refused")
+        mock_streamer_cls.return_value = mock_streamer
+        result = await fetch_daily_bars(MagicMock(), symbol="SPX")
+        self.assertEqual(result, [])
 
 
 if __name__ == '__main__':

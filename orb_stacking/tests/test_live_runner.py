@@ -39,8 +39,9 @@ class TestLiveRunnerSync(unittest.TestCase):
             'open': open_, 'high': high, 'low': low, 'close': close,
         }
 
-    def test_warmup_engine_prior_bars_use_atr_only(self):
-        """Prior-session bars must go to _atr.update only, not on_closed_bar."""
+    def test_warmup_engine_prior_bars_discarded(self):
+        """Prior-session 5m bars must be DROPPED (no _atr.update, no on_closed_bar).
+        ATR is seeded via daily bars separately — prior 5m bars have no use."""
         mock_engine = MagicMock()
         mock_engine._atr = MagicMock()
 
@@ -49,15 +50,14 @@ class TestLiveRunnerSync(unittest.TestCase):
 
         warmup_engine(mock_engine, [bar])
 
-        mock_engine._atr.update.assert_called_once_with(bar)
+        mock_engine._atr.update.assert_not_called()
         mock_engine.on_closed_bar.assert_not_called()
 
-    def test_warmup_engine_today_bars_use_full_engine(self):
-        """Today's bars must go through engine.on_closed_bar, not _atr.update directly."""
+    def test_warmup_engine_today_bars_use_on_closed_bar(self):
+        """Today's 5m bars must go through on_closed_bar only (never _atr.update)."""
         mock_engine = MagicMock()
         mock_engine._atr = MagicMock()
 
-        # 15:00 UTC today (well within a trading day in ET)
         today_15 = datetime.now(timezone.utc).replace(hour=15, minute=0, second=0, microsecond=0)
         bar = self._make_bar(today_15)
 
@@ -66,8 +66,8 @@ class TestLiveRunnerSync(unittest.TestCase):
         mock_engine.on_closed_bar.assert_called_once_with(bar)
         mock_engine._atr.update.assert_not_called()
 
-    def test_warmup_engine_splits_prior_and_today(self):
-        """Prior bars -> _atr.update; today bars -> on_closed_bar. No overlap."""
+    def test_warmup_engine_mixed_bars_filter_today_only(self):
+        """With prior + today mix, only today's bars reach on_closed_bar; priors dropped."""
         mock_engine = MagicMock()
         mock_engine._atr = MagicMock()
 
@@ -78,7 +78,7 @@ class TestLiveRunnerSync(unittest.TestCase):
 
         warmup_engine(mock_engine, [prior_bar, today_bar])
 
-        mock_engine._atr.update.assert_called_once_with(prior_bar)
+        mock_engine._atr.update.assert_not_called()
         mock_engine.on_closed_bar.assert_called_once_with(today_bar)
 
     def test_warmup_engine_with_empty_bars(self):
@@ -327,6 +327,81 @@ class TestLiveRunnerAsync(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call_kwargs['strategy_name'], 'ORB-STACK-NORMAL')
             self.assertEqual(call_kwargs['strategy_id'], 'ORB-STACK-NORMAL-1500')
 
+    @patch('orb_stacking.live_runner.fetch_daily_bars')
+    @patch('orb_stacking.live_runner.BarFetcher')
+    @patch('orb_stacking.live_runner.OrbStackingEngine')
+    @patch('orb_stacking.live_runner.strategy_mod')
+    async def test_run_orb_stacking_seeds_atr_from_daily_bars(
+        self, mock_strategy, mock_engine_cls, mock_fetcher_cls, mock_fetch_daily
+    ):
+        """run_orb_stacking must fetch daily bars and feed them to engine._atr.update."""
+        daily_bars = [
+            {'time': i, 'start': datetime.now(timezone.utc) - timedelta(days=14 - i),
+             'open': 6500, 'high': 6560, 'low': 6490, 'close': 6540}
+            for i in range(14)
+        ]
+        mock_fetch_daily.return_value = daily_bars
+
+        mock_engine = MagicMock()
+        mock_engine._atr = MagicMock()
+        mock_engine._atr.value = 55.0
+        mock_engine_cls.return_value = mock_engine
+
+        mock_fetcher = MagicMock()
+        mock_fetcher.fetch_history_with_retry = AsyncMock(return_value=[])
+
+        async def empty_stream(*a, **kw):
+            if False:
+                yield
+        mock_fetcher.stream_closed_bars = empty_stream
+        mock_fetcher_cls.return_value = mock_fetcher
+
+        mock_strategy.fetch_spx_option_chain = AsyncMock(return_value={})
+        mock_strategy.filter_for_0dte = MagicMock(return_value=[MagicMock()])
+
+        from orb_stacking.live_runner import run_orb_stacking
+        await run_orb_stacking(MagicMock())
+
+        mock_fetch_daily.assert_awaited_once()
+        self.assertEqual(mock_engine._atr.update.call_count, 14)
+
+    @patch('orb_stacking.live_runner.fetch_daily_bars')
+    @patch('orb_stacking.live_runner.BarFetcher')
+    @patch('orb_stacking.live_runner.OrbStackingEngine')
+    @patch('orb_stacking.live_runner.strategy_mod')
+    async def test_run_orb_stacking_fewer_than_14_daily_bars_skips_seed(
+        self, mock_strategy, mock_engine_cls, mock_fetcher_cls, mock_fetch_daily
+    ):
+        """If daily-bar fetch returns < 14, _atr.update must NOT be called."""
+        daily_bars = [
+            {'time': i, 'start': datetime.now(timezone.utc) - timedelta(days=10 - i),
+             'open': 6500, 'high': 6560, 'low': 6490, 'close': 6540}
+            for i in range(10)
+        ]
+        mock_fetch_daily.return_value = daily_bars
+
+        mock_engine = MagicMock()
+        mock_engine._atr = MagicMock()
+        mock_engine._atr.value = None
+        mock_engine_cls.return_value = mock_engine
+
+        mock_fetcher = MagicMock()
+        mock_fetcher.fetch_history_with_retry = AsyncMock(return_value=[])
+
+        async def empty_stream(*a, **kw):
+            if False:
+                yield
+        mock_fetcher.stream_closed_bars = empty_stream
+        mock_fetcher_cls.return_value = mock_fetcher
+
+        mock_strategy.fetch_spx_option_chain = AsyncMock(return_value={})
+        mock_strategy.filter_for_0dte = MagicMock(return_value=[MagicMock()])
+
+        from orb_stacking.live_runner import run_orb_stacking
+        await run_orb_stacking(MagicMock())
+
+        mock_engine._atr.update.assert_not_called()
+
     @patch('orb_stacking.live_runner.strategy_mod')
     async def test_handle_trade_intent_skips_negative_credit(self, mock_strategy):
         """handle_trade_intent should skip trades with negative credit and return None."""
@@ -383,7 +458,8 @@ class TestLiveRunnerAsync(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(result)
                 mock_logger.log_trade_entry.assert_not_called()
 
-    async def test_orb60_oppose_writes_force_close_reasons(self):
+    @patch('orb_stacking.live_runner.fetch_daily_bars')
+    async def test_orb60_oppose_writes_force_close_reasons(self, mock_fetch_daily):
         """ORB60 oppose skip event should write logged strategy_ids to FORCE_CLOSE_REASONS."""
         from datetime import timezone
         from orb_stacking.trade_intent import OrbTradeIntent, OrbSkipEvent
@@ -391,6 +467,8 @@ class TestLiveRunnerAsync(unittest.IsolatedAsyncioTestCase):
         import monitor as monitor_mod
 
         monitor_mod.FORCE_CLOSE_REASONS.clear()
+
+        mock_fetch_daily.return_value = []
 
         orb20 = OrbLevels(
             name="ORB20", high=5610, low=5600, range=10, midpoint=5605,
@@ -476,6 +554,67 @@ class TestLiveRunnerAsync(unittest.IsolatedAsyncioTestCase):
                             )
 
         monitor_mod.FORCE_CLOSE_REASONS.clear()
+
+    @patch('orb_stacking.live_runner.trade_logger')
+    @patch('orb_stacking.live_runner.strategy_mod')
+    @patch('orb_stacking.live_runner.BarFetcher')
+    @patch('orb_stacking.live_runner.fetch_daily_bars')
+    async def test_daily_atr_seeded_before_first_5m_bar(
+        self, mock_fetch_daily, mock_fetcher_cls, mock_strategy, mock_trade_logger
+    ):
+        """Daily _atr.update calls must complete BEFORE any 5m on_closed_bar call."""
+        from orb_stacking.engine import OrbStackingEngine
+        from orb_stacking.live_runner import run_orb_stacking
+
+        # Build 14 realistic daily bars
+        daily_bars = [
+            {'time': i, 'start': datetime.now(timezone.utc) - timedelta(days=14 - i),
+             'open': 6500, 'high': 6560, 'low': 6490, 'close': 6540}
+            for i in range(14)
+        ]
+        mock_fetch_daily.return_value = daily_bars
+
+        # Use a real engine so we can inspect real call ordering
+        engine = OrbStackingEngine()
+        call_log: list[str] = []
+        orig_atr_update = engine._atr.update
+        orig_on_closed = engine.on_closed_bar
+
+        def logged_atr_update(bar):
+            call_log.append("atr_update")
+            return orig_atr_update(bar)
+        def logged_on_closed(bar):
+            call_log.append("on_closed_bar")
+            return orig_on_closed(bar)
+
+        engine._atr.update = logged_atr_update
+        engine.on_closed_bar = logged_on_closed
+
+        with patch('orb_stacking.live_runner.OrbStackingEngine', return_value=engine):
+            mock_fetcher = MagicMock()
+            mock_fetcher.fetch_history_with_retry = AsyncMock(return_value=[])
+
+            async def one_bar_stream(*a, **kw):
+                # Single bar so on_closed_bar is called exactly once
+                yield {'time': 0, 'start': datetime.now(timezone.utc),
+                       'open': 6500, 'high': 6510, 'low': 6495, 'close': 6505}
+
+            mock_fetcher.stream_closed_bars = one_bar_stream
+            mock_fetcher_cls.return_value = mock_fetcher
+
+            mock_strategy.fetch_spx_option_chain = AsyncMock(return_value={})
+            mock_strategy.filter_for_0dte = MagicMock(return_value=[MagicMock()])
+
+            await run_orb_stacking(MagicMock())
+
+        # All 14 atr_updates must precede first on_closed_bar
+        first_closed_idx = call_log.index("on_closed_bar") if "on_closed_bar" in call_log else -1
+        atr_update_count_before_first_closed = (
+            call_log[:first_closed_idx].count("atr_update") if first_closed_idx >= 0
+            else call_log.count("atr_update")
+        )
+        self.assertEqual(atr_update_count_before_first_closed, 14,
+            f"Expected 14 atr_updates before first on_closed_bar; got {atr_update_count_before_first_closed}. Call log: {call_log[:20]}")
 
 
 class TestLogSkipEvent(unittest.TestCase):
