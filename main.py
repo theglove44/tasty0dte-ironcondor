@@ -99,22 +99,20 @@ async def execute_trade_cycle(session: Session, trigger_time: time = None):
 
     # === JADE LIZARD: Independent execution (fetches its own chain) ===
     # Runs BEFORE 0DTE chain fetch, so it doesn't get blocked by missing 0DTE expiries.
-    jade_lizard_opened = False
     from jade_lizard import execute_jade_lizard
     for strat in STRATEGY_CONFIGS:
         if strat['type'] != 'jade_lizard':
             continue
         allowed_times = strat.get('allowed_times')
-        if not jade_lizard_opened and _is_trigger_time_allowed(allowed_times, trigger_time):
-            opened = await execute_jade_lizard(
+        if _is_trigger_time_allowed(allowed_times, trigger_time):
+            await execute_jade_lizard(
                 session=session,
                 target_dte=strat['target_dte'],
                 strategy_name=strat['name'],
                 strategy_id=strat.get('code', 'JL'),
                 profit_target_pct=strat.get('profit_target_pct', 0.25),
+                discord_notify=discord_notify,
             )
-            if opened:
-                jade_lizard_opened = True
 
     # === 0DTE STRATEGIES: Require 0DTE expiration ===
     # Fetch chain

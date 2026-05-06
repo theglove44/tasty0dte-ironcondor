@@ -13,7 +13,7 @@ from jade_lizard import (
     filter_for_target_expiry,
     fetch_expected_move,
     find_jade_lizard_legs,
-    count_open_jade_lizards,
+    is_jade_lizard_variant_open,
     execute_jade_lizard,
     CREDIT_FLOOR,
     CALL_WING_WIDTH,
@@ -127,7 +127,7 @@ class TestFetchExpectedMove(unittest.IsolatedAsyncioTestCase):
         with patch('jade_lizard._unwrap_awaitable') as mock_unwrap:
             mock_unwrap.return_value = [spx_metric]
             result = await fetch_expected_move(session, spx_spot, target_expiry, today)
-            expected = spx_spot * iv * math.sqrt(dte / 365.0)
+            expected = spx_spot * iv * math.sqrt(dte / 365.0) * 0.68
             self.assertAlmostEqual(result, expected, places=2)
 
     async def test_no_metrics(self):
@@ -316,124 +316,58 @@ class TestFindJadeLizardLegs(unittest.TestCase):
         self.assertIsNone(result)
 
 
-class TestCountOpenJadeLizards(unittest.TestCase):
-    """Tests for count_open_jade_lizards."""
+class TestIsJadeLizardVariantOpen(unittest.TestCase):
+    """Tests for is_jade_lizard_variant_open."""
+
+    FIELDS = ['Date', 'Strategy', 'Status', 'Short Call', 'Long Call', 'Short Put', 'Long Put', 'Credit Collected', 'Buying Power', 'Profit Target']
+
+    def _make_row(self, strategy, status):
+        return {'Date': '2026-05-05', 'Strategy': strategy, 'Status': status,
+                'Short Call': 'SPX', 'Long Call': 'SPX', 'Short Put': 'SPX',
+                'Long Put': 'SPX', 'Credit Collected': '5.50', 'Buying Power': '500', 'Profit Target': '1.38'}
 
     def test_no_file(self):
-        """Test returns 0 when file missing."""
-        result = count_open_jade_lizards("/nonexistent/path.csv")
-        self.assertEqual(result, 0)
+        """Test returns False when file missing."""
+        result = is_jade_lizard_variant_open("JadeLizard_7DTE", "/nonexistent/path.csv")
+        self.assertFalse(result)
 
-    def test_zero_open(self):
-        """Test returns 0 when no open JadeLizard trades."""
+    def test_false_when_no_open_for_variant(self):
+        """Test returns False when variant has no OPEN row."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=['Date', 'Strategy', 'Status', 'Short Call', 'Long Call', 'Short Put', 'Long Put', 'Credit Collected', 'Buying Power', 'Profit Target']
-            )
+            writer = csv.DictWriter(f, fieldnames=self.FIELDS)
             writer.writeheader()
-            writer.writerow({
-                'Date': '2026-05-05',
-                'Strategy': 'Iron Fly V1',
-                'Status': 'OPEN',
-                'Short Call': 'SPX',
-                'Long Call': 'SPX',
-                'Short Put': 'SPX',
-                'Long Put': 'SPX',
-                'Credit Collected': '5.50',
-                'Buying Power': '500',
-                'Profit Target': '0.55',
-            })
+            writer.writerow(self._make_row('Iron Fly V1', 'OPEN'))
+            writer.writerow(self._make_row('JadeLizard_7DTE', 'CLOSED'))
             csv_path = f.name
-
         try:
-            result = count_open_jade_lizards(csv_path)
-            self.assertEqual(result, 0)
+            self.assertFalse(is_jade_lizard_variant_open("JadeLizard_7DTE", csv_path))
         finally:
-            import os
-            os.unlink(csv_path)
+            import os; os.unlink(csv_path)
 
-    def test_one_open(self):
-        """Test counts one open JadeLizard_7DTE."""
+    def test_true_when_variant_open(self):
+        """Test returns True when the exact variant has an OPEN row."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=['Date', 'Strategy', 'Status', 'Short Call', 'Long Call', 'Short Put', 'Long Put', 'Credit Collected', 'Buying Power', 'Profit Target']
-            )
+            writer = csv.DictWriter(f, fieldnames=self.FIELDS)
             writer.writeheader()
-            writer.writerow({
-                'Date': '2026-05-05',
-                'Strategy': 'JadeLizard_7DTE',
-                'Status': 'OPEN',
-                'Short Call': 'SPX',
-                'Long Call': 'SPX',
-                'Short Put': 'SPX',
-                'Long Put': 'SPX',
-                'Credit Collected': '5.50',
-                'Buying Power': '500',
-                'Profit Target': '1.38',
-            })
-            writer.writerow({
-                'Date': '2026-04-28',
-                'Strategy': 'JadeLizard_7DTE',
-                'Status': 'CLOSED',
-                'Short Call': 'SPX',
-                'Long Call': 'SPX',
-                'Short Put': 'SPX',
-                'Long Put': 'SPX',
-                'Credit Collected': '5.50',
-                'Buying Power': '500',
-                'Profit Target': '1.38',
-            })
+            writer.writerow(self._make_row('JadeLizard_7DTE', 'OPEN'))
             csv_path = f.name
-
         try:
-            result = count_open_jade_lizards(csv_path)
-            self.assertEqual(result, 1)
+            self.assertTrue(is_jade_lizard_variant_open("JadeLizard_7DTE", csv_path))
         finally:
-            import os
-            os.unlink(csv_path)
+            import os; os.unlink(csv_path)
 
-    def test_mixed_variants(self):
-        """Test counts multiple JadeLizard variants."""
+    def test_other_variant_open_does_not_block(self):
+        """Test JL5 open does not block JL7."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=['Date', 'Strategy', 'Status', 'Short Call', 'Long Call', 'Short Put', 'Long Put', 'Credit Collected', 'Buying Power', 'Profit Target']
-            )
+            writer = csv.DictWriter(f, fieldnames=self.FIELDS)
             writer.writeheader()
-            writer.writerow({
-                'Date': '2026-05-05',
-                'Strategy': 'JadeLizard_5DTE',
-                'Status': 'OPEN',
-                'Short Call': 'SPX',
-                'Long Call': 'SPX',
-                'Short Put': 'SPX',
-                'Long Put': 'SPX',
-                'Credit Collected': '5.50',
-                'Buying Power': '500',
-                'Profit Target': '1.38',
-            })
-            writer.writerow({
-                'Date': '2026-05-05',
-                'Strategy': 'JadeLizard_10DTE',
-                'Status': 'OPEN',
-                'Short Call': 'SPX',
-                'Long Call': 'SPX',
-                'Short Put': 'SPX',
-                'Long Put': 'SPX',
-                'Credit Collected': '5.50',
-                'Buying Power': '500',
-                'Profit Target': '1.38',
-            })
+            writer.writerow(self._make_row('JadeLizard_5DTE', 'OPEN'))
+            writer.writerow(self._make_row('JadeLizard_10DTE', 'OPEN'))
             csv_path = f.name
-
         try:
-            result = count_open_jade_lizards(csv_path)
-            self.assertEqual(result, 2)
+            self.assertFalse(is_jade_lizard_variant_open("JadeLizard_7DTE", csv_path))
         finally:
-            import os
-            os.unlink(csv_path)
+            import os; os.unlink(csv_path)
 
 
 class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
@@ -443,8 +377,8 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         """Test skips if JadeLizard already open."""
         session = MagicMock()
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count:
-            mock_count.return_value = 1
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count:
+            mock_count.return_value = True
 
             result = await execute_jade_lizard(
                 session,
@@ -459,9 +393,9 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         """Test skips when get_spx_spot returns None."""
         session = MagicMock()
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = None
 
             result = await execute_jade_lizard(
@@ -477,11 +411,11 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         """Test skips when no suitable expiry found."""
         session = MagicMock()
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_unwrap.return_value = {}
             mock_chain.return_value = {}
@@ -500,13 +434,13 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         session = MagicMock()
         today = date.today()
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
              patch('jade_lizard.select_target_expiry') as mock_expiry, \
              patch('jade_lizard.fetch_expected_move') as mock_em:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -527,7 +461,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         session = MagicMock()
         today = date.today()
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
@@ -535,7 +469,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
              patch('jade_lizard.filter_for_target_expiry') as mock_filter, \
              patch('jade_lizard.fetch_expected_move') as mock_em, \
              patch('jade_lizard.find_jade_lizard_legs') as mock_legs:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -565,7 +499,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
             'long_call': {'strike': 4555.0, 'symbol': 'LC', 'occ_symbol': 'SPX', 'price': 0.10},
         }
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
@@ -574,7 +508,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
              patch('jade_lizard.fetch_expected_move') as mock_em, \
              patch('jade_lizard.find_jade_lizard_legs') as mock_legs, \
              patch('jade_lizard.strategy_mod._fetch_leg_prices'):
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -605,7 +539,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         }
         # credit = (1.00 + 1.00) - (0.25 + 0.25) = 1.50 < 4.50
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
@@ -614,7 +548,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
              patch('jade_lizard.fetch_expected_move') as mock_em, \
              patch('jade_lizard.find_jade_lizard_legs') as mock_legs, \
              patch('jade_lizard.strategy_mod._fetch_leg_prices'):
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -650,7 +584,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         legs['short_call']['price'] = 3.00
         # credit = (3.00 + 3.00) - (0.50 + 0.50) = 6.00 - 1.00 = 5.00 >= 4.50 ✓
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
@@ -661,7 +595,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
              patch('jade_lizard.strategy_mod._fetch_leg_prices'), \
              patch('jade_lizard.validate_credit_sanity') as mock_validate, \
              patch('jade_lizard.trade_logger.log_trade_entry') as mock_log:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -699,7 +633,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         }
         # credit = 5.00
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
@@ -710,7 +644,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
              patch('jade_lizard.strategy_mod._fetch_leg_prices'), \
              patch('jade_lizard.validate_credit_sanity') as mock_validate, \
              patch('jade_lizard.trade_logger.log_trade_entry') as mock_log:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -744,7 +678,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         }
         # credit = 5.00, profit_target = 5.00 * 0.25 = 1.25
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot, \
              patch('jade_lizard.fetch_spx_option_chain') as mock_chain, \
              patch('jade_lizard._unwrap_awaitable') as mock_unwrap, \
@@ -755,7 +689,7 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
              patch('jade_lizard.strategy_mod._fetch_leg_prices'), \
              patch('jade_lizard.validate_credit_sanity') as mock_validate, \
              patch('jade_lizard.trade_logger.log_trade_entry') as mock_log:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.return_value = 4500.0
             mock_chain.return_value = {today + timedelta(days=7): []}
             mock_unwrap.return_value = {today + timedelta(days=7): []}
@@ -780,9 +714,9 @@ class TestExecuteJadeLizard(unittest.IsolatedAsyncioTestCase):
         """Test catches and logs exceptions."""
         session = MagicMock()
 
-        with patch('jade_lizard.count_open_jade_lizards') as mock_count, \
+        with patch('jade_lizard.is_jade_lizard_variant_open') as mock_count, \
              patch('jade_lizard.get_spx_spot') as mock_spot:
-            mock_count.return_value = 0
+            mock_count.return_value = False
             mock_spot.side_effect = RuntimeError("Test error")
 
             result = await execute_jade_lizard(

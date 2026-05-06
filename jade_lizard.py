@@ -116,7 +116,13 @@ async def fetch_expected_move(
         if dte <= 0:
             return None
 
-        return spx_spot * iv * math.sqrt(dte / 365.0)
+        # Tastytrade displays expected move as ~0.68σ (50th-percentile of |move|, not 1σ)
+        em = spx_spot * iv * math.sqrt(dte / 365.0) * 0.68
+        logger.info(
+            f"fetch_expected_move: expiry={target_expiry} iv_raw={iv_raw} iv={iv:.4f} "
+            f"dte={dte} spot={spx_spot:.2f} em={em:.2f}"
+        )
+        return em
 
     except Exception as e:
         logger.error(f"fetch_expected_move failed: {type(e).__name__}: {e}", exc_info=True)
@@ -150,6 +156,11 @@ def find_jade_lizard_legs(
     short_call = round_to_nearest_5(spx_spot + expected_move)
     long_call = short_call + CALL_WING_WIDTH
 
+    logger.info(
+        f"find_jade_lizard_legs: spot={spx_spot:.2f} em={expected_move:.2f} "
+        f"SP={short_put} LP={long_put} SC={short_call} LC={long_call}"
+    )
+
     # Sanity check
     if short_call <= short_put:
         logger.error(
@@ -180,7 +191,10 @@ def find_jade_lizard_legs(
     for leg_name, (strike, opt_type) in needed_strikes.items():
         lookup = by_strike_call if opt_type == 'CALL' else by_strike_put
         if strike not in lookup:
-            logger.error(f"Missing {opt_type} {strike}. Skipping trade.")
+            available = sorted(lookup.keys())
+            logger.error(
+                f"Missing {opt_type} {strike}. Available {opt_type} strikes: {available}"
+            )
             return None
         opt = lookup[strike]
         legs[leg_name] = {
@@ -192,14 +206,15 @@ def find_jade_lizard_legs(
     return legs
 
 
-def count_open_jade_lizards(csv_path: str = PAPER_TRADES_CSV) -> int:
-    """Count open Jade Lizard trades in CSV.
+def is_jade_lizard_variant_open(strategy_name: str, csv_path: str = PAPER_TRADES_CSV) -> bool:
+    """Check if a specific JL variant already has an open position.
 
     Args:
+        strategy_name: e.g. "JadeLizard_5DTE"
         csv_path: path to paper_trades.csv
 
     Returns:
-        Count of open JadeLizard_* trades, or 0 if file missing.
+        True if that exact variant has an OPEN row.
     """
     import csv
 
@@ -207,19 +222,15 @@ def count_open_jade_lizards(csv_path: str = PAPER_TRADES_CSV) -> int:
         with open(csv_path, 'r') as f:
             reader = csv.DictReader(f)
             if reader.fieldnames is None:
-                return 0
-
-            count = 0
+                return False
             for row in reader:
                 if 'Strategy' not in row or 'Status' not in row:
                     continue
-                strategy = row.get('Strategy', '')
-                status = row.get('Status', '')
-                if strategy.startswith(STRATEGY_PREFIX) and status == 'OPEN':
-                    count += 1
-            return count
+                if row.get('Strategy') == strategy_name and row.get('Status') == 'OPEN':
+                    return True
+        return False
     except FileNotFoundError:
-        return 0
+        return False
 
 
 async def execute_jade_lizard(
@@ -229,6 +240,7 @@ async def execute_jade_lizard(
     strategy_id: str,
     profit_target_pct: float = PROFIT_TARGET_PCT,
     today: date | None = None,
+    discord_notify=None,
 ) -> bool:
     """Execute Jade Lizard trade.
 
@@ -246,9 +258,9 @@ async def execute_jade_lizard(
     try:
         today = today or date.today()
 
-        # Check if already active
-        if count_open_jade_lizards() > 0:
-            logger.info(f"JadeLizard already active, skipping {strategy_name}")
+        # Check if this specific variant already has an open position
+        if is_jade_lizard_variant_open(strategy_name):
+            logger.info(f"[{strategy_name}] Already has an open position, skipping.")
             return False
 
         # Get SPX spot
@@ -350,6 +362,27 @@ async def execute_jade_lizard(
             f"CCS {short_call_strike}/{long_call_strike}C. "
             f"Expiry={target_expiry}, Credit=${credit:.2f}"
         )
+
+        if discord_notify:
+            try:
+                profit_target_debit = credit - profit_target
+                payload = discord_notify.format_trade_open_payload(
+                    strategy_name=strategy_name,
+                    short_call_symbol=legs['short_call']['symbol'],
+                    long_call_symbol=legs['long_call']['symbol'],
+                    short_put_symbol=legs['short_put']['symbol'],
+                    long_put_symbol=legs['long_put']['symbol'],
+                    credit=float(credit),
+                    profit_target=float(profit_target),
+                    profit_target_debit=profit_target_debit,
+                    wing_width=None,
+                    credit_pct=None,
+                    spx_spot=spx_spot,
+                    iv_rank=None,
+                )
+                discord_notify.send_discord_webhook(payload)
+            except Exception as e:
+                logger.warning(f"[{strategy_name}] Discord notification failed: {e}")
 
         return True
 
