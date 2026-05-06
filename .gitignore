@@ -54,3 +54,16 @@ logs/
 # Historical SPX 5-min bar data (backtest fuel for ORB Stacking, ~71MB).
 # Read directly from docs/ by the Slice 13 backtester. Reference data, not source.
 docs/SPX 5 min*.txt
+
+# Tool/MCP artifacts
+.memsearch/
+.playwright-mcp/
+
+# Screenshot and site artifacts
+*.png
+public_site/
+
+# Analysis output (generated, not source)
+trade_analysis.md
+summary_*.csv
+skip_events.csv
