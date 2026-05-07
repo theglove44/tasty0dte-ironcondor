@@ -26,6 +26,10 @@ PUT_WING_WIDTH: int = 20
 PROFIT_TARGET_PCT: float = 0.25
 PAPER_TRADES_CSV: str = "paper_trades.csv"
 STRATEGY_PREFIX: str = "JadeLizard_"
+# Max steps to nudge strikes closer to ATM when credit is below floor.
+# Each step moves short_put up 5pts and short_call down 5pts (5pt increments).
+# 3 steps = max 15pt adjustment per side before giving up.
+MAX_NUDGE_STEPS: int = 3
 
 
 def round_to_nearest_5(x: float) -> int:
@@ -294,31 +298,38 @@ async def execute_jade_lizard(
             return False
 
         # Find legs
-        legs = find_jade_lizard_legs(options_list, spx_spot, expected_move)
+        # Find legs, nudging strikes closer to ATM by 5pts per side if credit is below floor.
+        legs = None
+        credit = 0.0
+        for nudge in range(MAX_NUDGE_STEPS + 1):
+            adjusted_em = expected_move - nudge * 5
+            if adjusted_em <= 0:
+                break
+            candidate = find_jade_lizard_legs(options_list, spx_spot, adjusted_em)
+            if candidate is None:
+                continue
+            await strategy_mod._fetch_leg_prices(session, candidate)
+            missing = [l for l in ('short_put', 'long_put', 'short_call', 'long_call')
+                       if not candidate[l].get('price')]
+            if missing:
+                logger.info(f"[{strategy_name}] nudge={nudge}: missing prices for {missing}. Trying next.")
+                continue
+            c = (candidate['short_put']['price'] + candidate['short_call']['price']
+                 ) - (candidate['long_put']['price'] + candidate['long_call']['price'])
+            if nudge > 0:
+                logger.info(
+                    f"[{strategy_name}] Nudge step {nudge} (em={adjusted_em:.1f}): credit=${c:.2f}"
+                )
+            if c >= CREDIT_FLOOR:
+                legs, credit = candidate, c
+                break
+            if nudge == MAX_NUDGE_STEPS:
+                logger.info(
+                    f"[{strategy_name}] Credit ${c:.2f} below floor ${CREDIT_FLOOR:.2f} "
+                    f"after {MAX_NUDGE_STEPS} nudge steps. Skipping."
+                )
+
         if legs is None:
-            return False
-
-        # Fetch leg prices
-        await strategy_mod._fetch_leg_prices(session, legs)
-
-        # Verify prices
-        for leg_name in ['short_put', 'long_put', 'short_call', 'long_call']:
-            if legs[leg_name].get('price') is None or legs[leg_name].get('price') == 0.0:
-                logger.info(f"[{strategy_name}] missing_leg_price for {leg_name}. Skipping.")
-                return False
-
-        # Compute credit
-        credit = (
-            legs['short_put']['price'] + legs['short_call']['price']
-        ) - (
-            legs['long_put']['price'] + legs['long_call']['price']
-        )
-
-        # Check credit floor
-        if credit < CREDIT_FLOOR:
-            logger.info(
-                f"[{strategy_name}] Credit ${credit:.2f} below floor ${CREDIT_FLOOR:.2f}. Skipping."
-            )
             return False
 
         # Sanity check
@@ -333,9 +344,12 @@ async def execute_jade_lizard(
         buying_power = PUT_WING_WIDTH * 100 - credit * 100
         profit_target = credit * profit_target_pct
 
-        # Build notes
+        # Build notes — record actual em used (may differ from initial if nudged)
         dte_actual = (target_expiry - today).days
-        notes = f"target_expiry={target_expiry.isoformat()};dte={dte_actual};em={expected_move:.2f}"
+        em_used = expected_move - nudge * 5
+        notes = f"target_expiry={target_expiry.isoformat()};dte={dte_actual};em={em_used:.2f}"
+        if nudge > 0:
+            notes += f";nudge={nudge}"
 
         # Log trade
         trade_logger.log_trade_entry(
