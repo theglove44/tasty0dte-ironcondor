@@ -59,6 +59,25 @@ When updating times for DST shifts, audit **every** hardcoded time in the codeba
 - `paper_trades.csv` — Trade history
 - `.spx_cache.json` — SPX price cache for EOD settlement
 
+## Analysis Scripts
+
+The `analysis/` directory contains reusable scripts for working with `paper_trades.csv` and the public research site at `public_site/`. **Use these instead of re-implementing analysis logic inline.** See `analysis/README.md` for full docs.
+
+- `analysis/common.py` — shared filters, DST normalisation, stat helpers (`load_trades`, `streaks`, `drawdown_episodes`, etc.). Import from here.
+- `analysis/regenerate_site_data.py` — rebuild `public_site/data.js`. Run after any CSV change.
+- `analysis/dedup_trades.py` — find and remove duplicate trade rows (Discord double-fires, etc.).
+- `analysis/strategy_metrics.py` — deep per-strategy metrics: streaks, drawdowns, IV regime, day-move sensitivity, exit clustering, autocorrelation.
+- `analysis/exit_analysis.py` — exit-reason breakdown (profit-target / time-stop / settled).
+
+Default filters applied by every script: closed-only trades, private strategies excluded (`Premium Popper`, `ORB-STACK-*`, `JadeLizard_*`), anomalous-credit outliers excluded (Credit Collected > $30). Override with `--include-private` / `--keep-outliers` for ad-hoc personal analysis.
+
+Typical weekly update flow:
+```bash
+python3 analysis/dedup_trades.py --apply        # if any duplicates
+python3 analysis/regenerate_site_data.py        # rebuild data.js
+# then drag public_site/ to Cloudflare Pages
+```
+
 ## Log Hierarchy (READ THIS BEFORE DIAGNOSING)
 
 **Before making any claim about bot health, read sources in this order and stop at the first one that answers the question. Do not guess from log filenames — most of them are noisy or unrelated to the trading bot.**

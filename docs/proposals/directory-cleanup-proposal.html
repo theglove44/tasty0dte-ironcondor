@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Directory Cleanup Proposal</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --ink: #202124;
+      --muted: #646a73;
+      --line: #d9ddd8;
+      --accent: #1f6f5f;
+      --warn: #9a5b00;
+      --code: #f1f3f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      padding: 48px min(7vw, 72px) 28px;
+      background: #173f38;
+      color: white;
+    }
+    header p { max-width: 860px; margin: 10px 0 0; color: #dce8e4; }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 56px; }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { margin: 0; font-size: clamp(30px, 4vw, 48px); }
+    h2 { margin: 34px 0 14px; font-size: 24px; }
+    h3 { margin: 20px 0 10px; font-size: 17px; }
+    .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+    }
+    .tag {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e6efec;
+      color: #164d43;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    pre {
+      overflow: auto;
+      margin: 0;
+      padding: 14px;
+      border-radius: 6px;
+      background: var(--code);
+      border: 1px solid var(--line);
+      font-size: 13px;
+    }
+    code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #edf1ef; font-size: 13px; }
+    ul { padding-left: 20px; }
+    .note { border-left: 4px solid var(--accent); padding: 10px 14px; background: #eef6f3; }
+    .warn { border-left-color: var(--warn); background: #fff6e7; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Directory Cleanup Proposal</h1>
+    <p>Compatibility-first plan for reducing root directory clutter in the Tasty0DTE Iron Condor paper-trading repository without breaking current bot, dashboard, analysis, or cron workflows.</p>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Executive Summary</h2>
+      <p>The root directory currently mixes live trading entrypoints, strategy modules, tests, logs, paper-trade data, generated reports, backups, screenshots, vendor docs, and local tool artifacts. Because the bot depends on root-relative paths such as <code>paper_trades.csv</code>, <code>trade.log</code>, <code>.spx_cache.json</code>, and <code>python main.py</code>, the cleanup should be staged.</p>
+      <p>The implemented approach centralizes path ownership first, fixes the test baseline, moves low-risk artifacts, and relocates active runtime data/logs before any source-package move.</p>
+    </section>
+
+    <h2>Current Root Inventory</h2>
+    <div class="grid">
+      <div class="card"><h3>Runtime Source</h3><p><span class="tag">main.py</span><span class="tag">strategy.py</span><span class="tag">monitor.py</span><span class="tag">logger.py</span><span class="tag">premium_popper.py</span><span class="tag">jade_lizard.py</span></p><p>Core bot modules are mixed directly into the root.</p></div>
+      <div class="card"><h3>Tests</h3><p><span class="tag">test_*.py</span><span class="tag">orb_stacking/tests</span><span class="tag">tools/tests</span></p><p>Tests are split across root and package directories.</p></div>
+      <div class="card"><h3>Operational Artifacts</h3><p><span class="tag">*.log</span><span class="tag">paper_trades.csv</span><span class="tag">skip_events.csv</span><span class="tag">.spx_cache.json</span></p><p>Live data and generated state sit beside source files.</p></div>
+      <div class="card"><h3>Historical Clutter</h3><p><span class="tag">*.bak*</span><span class="tag">*.png</span><span class="tag">summary_*.csv</span><span class="tag">trade_analysis.md</span></p><p>Backups, screenshots, and reports make the root hard to scan.</p></div>
+    </div>
+
+    <h2>Before and After</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Before</h3>
+        <pre>.
+├── main.py, strategy.py, monitor.py, logger.py
+├── premium_popper.py, jade_lizard.py, launch_popper.py
+├── test_*.py
+├── start.sh, stop.sh, status.sh, cron_*.sh
+├── paper_trades.csv, skip_events.csv, *.log, .spx_cache.json
+├── *.bak*, *.png, summary_*.csv, trade_analysis.md
+├── dashboard/
+├── orb_stacking/
+├── analysis/
+├── tools/
+├── docs/
+├── tastytrade-docs/
+└── public_site/</pre>
+      </div>
+      <div class="card">
+        <h3>After</h3>
+        <pre>.
+├── main.py, strategy.py, monitor.py        # compatibility wrappers
+├── start.sh, stop.sh, status.sh            # launch controls
+├── tasty0dte/                              # main bot package
+├── orb_stacking/                           # existing strategy package
+├── dashboard/
+├── tests/
+├── tools/
+├── analysis/
+├── data/                                   # paper_trades.csv, skip_events.csv
+├── runtime/                                # logs, pid, cache
+├── archive/                                # backups, screenshots, old reports
+├── docs/
+├── tastytrade-docs/
+└── public_site/</pre>
+      </div>
+    </div>
+
+    <h2>Staged Action Plan</h2>
+    <table>
+      <thead><tr><th>Stage</th><th>Action</th><th>Reason</th><th>Risk Control</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Add central path constants and document the proposal.</td><td>Reduces hard-coded path edits later.</td><td>Keep defaults pointing at current root files.</td></tr>
+        <tr><td>2</td><td>Fix the current test baseline.</td><td>Existing failures hide restructure regressions.</td><td>Run full <code>unittest</code> before and after each stage.</td></tr>
+        <tr><td>3</td><td>Move generated artifacts to <code>archive/</code>, <code>data/</code>, and <code>runtime/</code>.</td><td>Removes clutter without changing imports.</td><td>Implemented for backups, screenshots, reports, active CSVs, logs, and SPX cache with fallback compatibility.</td></tr>
+        <tr><td>4</td><td>Create <code>tasty0dte/</code> package and root wrappers.</td><td>Separates source from operational files.</td><td>Implemented with compatibility aliases so <code>python main.py</code>, root imports, and existing patch targets still work.</td></tr>
+        <tr><td>5</td><td>Move root tests into <code>tests/</code> and utility scripts into <code>tools/</code>/<code>analysis/</code>.</td><td>Makes the root scanable while keeping launch compatibility.</td><td>Implemented with import bootstrapping and full discovery checks.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Testing and Acceptance</h2>
+    <div class="card">
+      <p class="note">Implemented baseline: <code>venv/bin/python -m unittest discover -v</code> now runs 438 tests successfully. The previous Premium Popper breakout-bias failures were fixed before larger cleanup stages.</p>
+      <ul>
+        <li>Run <code>venv/bin/python -m unittest discover -v</code> after every stage.</li>
+        <li>Run <code>venv/bin/python -m py_compile main.py strategy.py monitor.py logger.py project_paths.py</code>.</li>
+        <li>Run shell syntax checks: <code>bash -n start.sh stop.sh status.sh run_autotrader.sh cron_start.sh cron_stop.sh</code>.</li>
+        <li>Smoke test dashboard routes with Flask test client and no live credentials.</li>
+        <li>Verify analysis scripts can read the configured paper-trade CSV and write to temporary output.</li>
+      </ul>
+    </div>
+
+    <h2>Best Practices Going Forward</h2>
+    <div class="grid">
+      <div class="card"><h3>Keep Root Small</h3><p>Only repository metadata, docs entrypoints, dependency files, and compatibility launchers should remain at root.</p></div>
+      <div class="card"><h3>Use Central Paths</h3><p>New code should import path constants instead of hard-coding <code>paper_trades.csv</code> or log names.</p></div>
+      <div class="card"><h3>Separate Source and Artifacts</h3><p>Generated CSVs, logs, screenshots, and reports belong in <code>data/</code>, <code>runtime/</code>, <code>archive/</code>, or ignored output folders.</p></div>
+      <div class="card"><h3>Protect Operations</h3><p>Any change touching trading loops, cron scripts, logs, or CSV schema must include tests and an explicit rollback path.</p></div>
+    </div>
+  </main>
+</body>
+</html>

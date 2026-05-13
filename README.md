@@ -12,7 +12,7 @@ This project focuses on systematic same-day premium-selling strategies and inclu
 - an optional Flask dashboard for monitoring session state and results
 
 > [!IMPORTANT]
-> This repository is currently implemented as a **paper-trading system**. It logs trades to `paper_trades.csv` and is designed for strategy testing, monitoring, and iteration rather than live execution.
+> This repository is currently implemented as a **paper-trading system**. It logs trades to `data/paper_trades.csv` and is designed for strategy testing, monitoring, and iteration rather than live execution.
 
 ## What the bot does
 
@@ -24,7 +24,7 @@ At a high level, the bot:
 4. logs the trade to CSV with buying power, credit, and target metrics
 5. monitors open positions for profit targets, time exits, and end-of-day settlement logic
 
-The main runtime loop is in `main.py`, with strategy selection in `strategy.py`, position monitoring in `monitor.py`, and CSV logging in `logger.py`.
+The main runtime loop is implemented in `tasty0dte/main.py`, with strategy selection in `tasty0dte/strategy.py`, position monitoring in `tasty0dte/monitor.py`, and CSV logging in `tasty0dte/logger.py`. Root modules with the same names remain as compatibility wrappers, so existing commands such as `python main.py` still work.
 
 ## Current strategy set
 
@@ -62,15 +62,19 @@ The following strategies were removed after a 510-trade review in March 2026:
 
 ```text
 .
-├── main.py                  # scheduler and trade-cycle runner
-├── strategy.py              # option-chain, greeks, SPX data, leg selection
-├── monitor.py               # quote streaming, profit exits, time exits, EOD logic
-├── logger.py                # CSV logging and trade persistence
-├── premium_popper.py        # ORB-style strategy task
-├── analyze_performance.py   # post-session performance analysis
-├── view_trades.py           # quick trade log inspection
+├── main.py                  # compatibility wrapper for python main.py
+├── strategy.py, monitor.py  # root import compatibility wrappers
+├── tasty0dte/               # packaged bot runtime
+│   ├── main.py              # scheduler and trade-cycle runner
+│   ├── strategy.py          # option-chain, greeks, SPX data, leg selection
+│   ├── monitor.py           # quote streaming, profit exits, time exits, EOD logic
+│   ├── logger.py            # CSV logging and trade persistence
+│   └── premium_popper.py    # ORB-style strategy task
+├── orb_stacking/            # packaged ORB Stacking strategy
+├── tests/                   # root-level unit tests moved out of project root
+├── tools/                   # manual probes and operational utilities
+├── analysis/                # performance analysis and report builders
 ├── dashboard/               # Flask monitoring dashboard
-├── checks/                  # pre-session checks
 ├── docs/                    # supporting docs
 └── .env.example             # expected environment variables
 ```
@@ -137,30 +141,31 @@ Example:
 
 ```cron
 # Start before the first session trigger (UK time)
-30 13 * * 1-5 /path/to/tasty0dte-ironcondor/cron_start.sh >> /path/to/tasty0dte-ironcondor/cron.log 2>&1
+30 13 * * 1-5 /path/to/tasty0dte-ironcondor/cron_start.sh >> /path/to/tasty0dte-ironcondor/runtime/logs/cron.log 2>&1
 
 # Stop after the end-of-day handling window
-15 21 * * 1-5 /path/to/tasty0dte-ironcondor/cron_stop.sh >> /path/to/tasty0dte-ironcondor/cron.log 2>&1
+15 21 * * 1-5 /path/to/tasty0dte-ironcondor/cron_stop.sh >> /path/to/tasty0dte-ironcondor/runtime/logs/cron.log 2>&1
 ```
 
 ## Logs and data files
 
 | File | Purpose |
 |---|---|
-| `paper_trades.csv` | trade ledger / paper-trading source of truth |
-| `trade.log` | runtime events and trade lifecycle logs |
-| `stdout.log` | standard output from helper scripts |
-| `stderr.log` | error output from helper scripts |
-| `cron.log` | cron start / stop events |
-| `.spx_cache.json` | cached SPX value used as a last-resort settlement fallback |
+| `data/paper_trades.csv` | trade ledger / paper-trading source of truth |
+| `data/skip_events.csv` | ORB skip-event log |
+| `runtime/logs/trade.log` | runtime events and trade lifecycle logs |
+| `runtime/logs/stdout.log` | standard output from helper scripts |
+| `runtime/logs/stderr.log` | error output from helper scripts |
+| `runtime/logs/cron.log` | cron start / stop events |
+| `runtime/state/.spx_cache.json` | cached SPX value used as a last-resort settlement fallback |
 
 Useful commands:
 
 ```bash
-tail -f stdout.log
-tail -f trade.log
-python view_trades.py
-python analyze_performance.py
+tail -f runtime/logs/stdout.log
+tail -f runtime/logs/trade.log
+python tools/view_trades.py
+python analysis/performance_summary.py
 ```
 
 ## Dashboard
@@ -180,7 +185,7 @@ The dashboard is intended to surface session status, open positions, closed trad
 
 ```bash
 venv/bin/python -m unittest discover -v
-venv/bin/python -m py_compile main.py strategy.py monitor.py logger.py
+venv/bin/python -m py_compile main.py strategy.py monitor.py logger.py tasty0dte/*.py tools/*.py analysis/*.py
 ```
 
 ## Known limitations
@@ -192,7 +197,7 @@ venv/bin/python -m py_compile main.py strategy.py monitor.py logger.py
 
 ## Roadmap ideas
 
-- add example dashboard screenshots / sample `paper_trades.csv`
+- add example dashboard screenshots / sample `data/paper_trades.csv`
 - package the bot as a proper Python module with a cleaner CLI
 - separate strategy configs into YAML or JSON rather than inline dictionaries
 - add CI for tests and linting

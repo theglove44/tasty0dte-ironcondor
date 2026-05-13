@@ -32,7 +32,7 @@ where
 
 **Decision.** Reuse the existing DXLink `subscribe_candle` path in `bar_fetcher.py`, switching `DEFAULT_INTERVAL` from `"30m"` to `"5m"` and `DEFAULT_LOOKBACK_DAYS` from 10 to 2. Run a one-shot candle-depth probe (Slice 1a) **before** any engine slice lands, to empirically verify that (a) DXLink honors `"5m"`, (b) historical warmup returns enough bars to seed ATR(14), (c) live closed-bar latency is <2s.
 
-**Justification.** Project memory already claims `subscribe_candle(symbols, "5m", start_time)` works (SDK v12.0.0), and the existing `test_candle_depth.py` proves DXLink can stream SPX candles. But the current build only ever exercised `"30m"`, and `ORB20` tolerance is <60s — we cannot take a dependency on an interval we haven't actually probed on SPX during RTH. The probe is a 30-line script that asserts the three things above and runs once manually. Cheap insurance against finding out mid-build that the 5m feed has gaps.
+**Justification.** Project memory already claims `subscribe_candle(symbols, "5m", start_time)` works (SDK v12.0.0), and the existing `tools/probe_candle_depth.py` proves DXLink can stream SPX candles. But the current build only ever exercised `"30m"`, and `ORB20` tolerance is <60s — we cannot take a dependency on an interval we haven't actually probed on SPX during RTH. The probe is a 30-line script that asserts the three things above and runs once manually. Cheap insurance against finding out mid-build that the 5m feed has gaps.
 
 ### A3. Live Premium Popper integration path
 
@@ -97,7 +97,7 @@ Helper: `_bar(utc_hhmm, o, h, l, c)` in tests, where `utc_hhmm` is a `"HH:MM"` s
 2. `/Users/office/.claude/projects/-Users-office-Projects-tasty0dte-ironcondor/memory/MEMORY.md` — "Key Files" section, "Tag N Turn" section header, `project_tag_n_turn.md` reference
 3. `CLAUDE.md` — only mentions `tag_n_turn` in passing; should be updated or annotated that ORB Stacking lives in `orb_stacking/`
 4. `tag_n_turn_demo.py` — rename to `orb_stacking_demo.py` AND update all imports
-5. `test_candle_depth.py` — no rename needed; it's already strategy-agnostic
+5. `tools/probe_candle_depth.py` — strategy-agnostic manual feed probe
 6. Test discovery command — update to `python -m unittest discover -s orb_stacking/tests -t .`
 7. `feedback_*.md` files under `~/.claude/projects/.../memory/` — leave as historical artefacts, add one new feedback file pointing to the rename
 8. No live-bot file (`main.py`, `strategy.py`, `monitor.py`, etc.) currently imports from `tag_n_turn/`, so Slice 0 touches zero live code
@@ -720,7 +720,7 @@ class OrbStackingEngine:
 
 **Files:**
 - REWRITE `orb_stacking_demo.py` (~180 LOC):
-  - CLI: `python orb_stacking_demo.py [--replay DATE]` — replay mode reads historical bars from DXLink with a start_time; live mode streams closed bars
+  - CLI: `python tools/orb_stacking_demo.py [--replay DATE]` — replay mode reads historical bars from DXLink with a start_time; live mode streams closed bars
   - Instantiates `BarFetcher("SPX", "5m", lookback_days=1)`, warms up ATR, then streams
   - Pretty-prints every `StackingEvent`, `OrbTradeIntent`, `OrbSkipEvent` with timestamps in UK time
   - Exits cleanly on Ctrl-C and on `TIMEOUT_NOON` or `ORB60_OPPOSE` event
