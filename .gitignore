@@ -41,7 +41,7 @@ paper_trades.csv.*
 *.csv.bak
 data/*.backup*
 data/*.bak*
-market_session_guard.sh
+!market_session_guard.sh
 *.bak
 *.bak.*
 *.log.bak*
