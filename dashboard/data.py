@@ -9,6 +9,7 @@ import json
 import os
 import re
 import signal
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -19,12 +20,24 @@ import pytz
 # Paths (relative to project root)
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_PATH = os.path.join(BASE_DIR, "paper_trades.csv")
-SPX_CACHE = os.path.join(BASE_DIR, ".spx_cache.json")
-BOT_PID = os.path.join(BASE_DIR, "bot.pid")
-CRON_LOG = os.path.join(BASE_DIR, "cron.log")
-TRADE_LOG = os.path.join(BASE_DIR, "trade.log")
-STDERR_LOG = os.path.join(BASE_DIR, "stderr.log")
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from project_paths import (
+    BOT_PID as PROJECT_BOT_PID,
+    CRON_LOG as PROJECT_CRON_LOG,
+    PAPER_TRADES_CSV,
+    SPX_CACHE_JSON,
+    STDERR_LOG as PROJECT_STDERR_LOG,
+    TRADE_LOG as PROJECT_TRADE_LOG,
+)
+
+CSV_PATH = str(PAPER_TRADES_CSV)
+SPX_CACHE = str(SPX_CACHE_JSON)
+BOT_PID = str(PROJECT_BOT_PID)
+CRON_LOG = str(PROJECT_CRON_LOG)
+TRADE_LOG = str(PROJECT_TRADE_LOG)
+STDERR_LOG = str(PROJECT_STDERR_LOG)
 
 UK = pytz.timezone("Europe/London")
 

@@ -4,7 +4,8 @@
 #
 cd "$(dirname "$0")"
 
-PID_FILE="bot.pid"
+PID_FILE="runtime/state/bot.pid"
+STDOUT_LOG="runtime/logs/stdout.log"
 
 # Check PID file first
 if [ -f "$PID_FILE" ]; then
@@ -13,7 +14,7 @@ if [ -f "$PID_FILE" ]; then
         echo "✅ Bot is running (PID: $PID)"
         echo ""
         echo "Recent log:"
-        tail -5 stdout.log 2>/dev/null || echo "(no log yet)"
+        tail -5 "$STDOUT_LOG" 2>/dev/null || echo "(no log yet)"
         exit 0
     else
         echo "⚠️ Stale PID file (process $PID not running)"

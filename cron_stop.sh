@@ -5,7 +5,7 @@
 #
 cd "$(dirname "$0")"
 
-PID_FILE="bot.pid"
+PID_FILE="runtime/state/bot.pid"
 
 # Check PID file first
 if [ -f "$PID_FILE" ]; then

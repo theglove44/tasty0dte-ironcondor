@@ -4,7 +4,7 @@
 #
 cd "$(dirname "$0")"
 
-PID_FILE="bot.pid"
+PID_FILE="runtime/state/bot.pid"
 
 # Get PID from file or fallback to pgrep
 if [ -f "$PID_FILE" ]; then

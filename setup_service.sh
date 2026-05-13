@@ -4,6 +4,7 @@
 SERVICE_NAME="com.${USER}.tasty0dte"
 PLIST_NAME="${SERVICE_NAME}.plist"
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+LOG_DIR="${PROJECT_DIR}/runtime/logs"
 LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 PLIST_DEST="${LAUNCH_AGENTS_DIR}/${PLIST_NAME}"
 
@@ -19,6 +20,7 @@ fi
 
 # Ensure run_autotrader.sh is executable
 chmod +x "${PROJECT_DIR}/run_autotrader.sh"
+mkdir -p "${LOG_DIR}"
 
 # Create plist content
 cat > "${PROJECT_DIR}/${PLIST_NAME}" <<EOF
@@ -40,9 +42,9 @@ cat > "${PROJECT_DIR}/${PLIST_NAME}" <<EOF
     <key>WorkingDirectory</key>
     <string>${PROJECT_DIR}</string>
     <key>StandardOutPath</key>
-    <string>${PROJECT_DIR}/stdout.log</string>
+    <string>${LOG_DIR}/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>${PROJECT_DIR}/stderr.log</string>
+    <string>${LOG_DIR}/stderr.log</string>
 </dict>
 </plist>
 EOF
@@ -62,8 +64,8 @@ echo "Loading service..."
 if launchctl load "${PLIST_DEST}"; then
     echo "✅ Service loaded successfully!"
     echo "Logs are available at:"
-    echo "  stdout: ${PROJECT_DIR}/stdout.log"
-    echo "  stderr: ${PROJECT_DIR}/stderr.log"
+    echo "  stdout: ${LOG_DIR}/stdout.log"
+    echo "  stderr: ${LOG_DIR}/stderr.log"
     echo ""
     echo "To stop the service, run:"
     echo "  launchctl unload ${PLIST_DEST}"

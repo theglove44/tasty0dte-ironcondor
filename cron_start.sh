@@ -5,7 +5,14 @@
 #
 cd "$(dirname "$0")"
 
-PID_FILE="bot.pid"
+RUNTIME_DIR="runtime"
+LOG_DIR="$RUNTIME_DIR/logs"
+STATE_DIR="$RUNTIME_DIR/state"
+PID_FILE="$STATE_DIR/bot.pid"
+STDOUT_LOG="$LOG_DIR/stdout.log"
+STDERR_LOG="$LOG_DIR/stderr.log"
+
+mkdir -p "$LOG_DIR" "$STATE_DIR"
 
 # Only run on weekdays (1-5 = Mon-Fri)
 DOW=$(date +%u)
@@ -32,7 +39,7 @@ echo "[$(date)] Starting bot for trading session..."
 source venv/bin/activate
 
 # Start with caffeinate, capture the caffeinate PID (parent of python)
-caffeinate -i python -u main.py >> stdout.log 2>> stderr.log &
+caffeinate -i python -u main.py >> "$STDOUT_LOG" 2>> "$STDERR_LOG" &
 BOT_PID=$!
 
 # Write PID file

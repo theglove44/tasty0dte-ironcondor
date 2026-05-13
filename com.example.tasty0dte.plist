@@ -16,8 +16,8 @@
     <key>WorkingDirectory</key>
     <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor</string>
     <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/stdout.log</string>
+    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/runtime/logs/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/stderr.log</string>
+    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/runtime/logs/stderr.log</string>
 </dict>
 </plist>

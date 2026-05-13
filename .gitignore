@@ -23,6 +23,8 @@ stderr.log
 guard_stdout.log
 guard_stderr.log
 cron.log
+runtime/*
+!runtime/.gitkeep
 
 # Runtime state
 bot.pid
@@ -37,6 +39,8 @@ bot.pid
 paper_trades.csv
 paper_trades.csv.*
 *.csv.bak
+data/*.backup*
+data/*.bak*
 market_session_guard.sh
 *.bak
 *.bak.*
@@ -58,10 +62,18 @@ docs/SPX 5 min*.txt
 # Tool/MCP artifacts
 .memsearch/
 .playwright-mcp/
+.claude/
 
 # Screenshot and site artifacts
 *.png
 public_site/
+archive/*
+!archive/.gitkeep
+!archive/backups/
+archive/backups/*
+!archive/backups/README-backup.md
+!archive/backups/main.py.bak
+!archive/backups/strategy.py.bak
 
 # Analysis output (generated, not source)
 trade_analysis.md
