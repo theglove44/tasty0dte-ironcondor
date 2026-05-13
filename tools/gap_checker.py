@@ -3,12 +3,11 @@
 
 import os
 import asyncio
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
 from tastytrade import Session
+
+import _bootstrap  # noqa: F401
 import strategy
 
 load_dotenv()

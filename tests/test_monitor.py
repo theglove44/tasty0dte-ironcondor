@@ -85,6 +85,55 @@ class TestMonitor(unittest.TestCase):
         df = pd.read_csv(self.csv_path)
         self.assertEqual(df.iloc[0]['Status'], 'OPEN')
 
+    @patch('monitor.DXLinkStreamer')
+    def test_corrupt_quotes_negative_debit_no_close(self, MockStreamer):
+        """Stale stream data: longs priced higher than shorts → negative debit.
+        Trade must stay OPEN — the sanity guard should block the close."""
+        mock_streamer_instance = AsyncMock()
+        MockStreamer.return_value.__aenter__.return_value = mock_streamer_instance
+        mock_session = MagicMock()
+
+        # SC=0.0 (stream dropped), LC=0.50 (stale) → debit = -0.50 per side → impossible
+        quotes = [
+            Quote(eventSymbol='SC', bidPrice=0.0, askPrice=0.0, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+            Quote(eventSymbol='SP', bidPrice=0.0, askPrice=0.0, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+            Quote(eventSymbol='LC', bidPrice=0.49, askPrice=0.51, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+            Quote(eventSymbol='LP', bidPrice=0.49, askPrice=0.51, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+        ]
+
+        async def mock_listen(event_type):
+            yield quotes
+
+        mock_streamer_instance.listen = MagicMock(side_effect=mock_listen)
+        asyncio.run(check_open_positions(mock_session, self.csv_path))
+
+        df = pd.read_csv(self.csv_path)
+        self.assertEqual(df.iloc[0]['Status'], 'OPEN')
+
+    @patch('monitor.DXLinkStreamer')
+    def test_corrupt_quotes_profit_exceeds_credit_no_close(self, MockStreamer):
+        """Impossible quote: computed profit > initial credit. Trade must stay OPEN."""
+        mock_streamer_instance = AsyncMock()
+        MockStreamer.return_value.__aenter__.return_value = mock_streamer_instance
+        mock_session = MagicMock()
+
+        # Debit = -0.20 → current_profit = 1.00 - (-0.20) = 1.20 > credit 1.00 → impossible
+        quotes = [
+            Quote(eventSymbol='SC', bidPrice=0.0, askPrice=0.0, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+            Quote(eventSymbol='SP', bidPrice=0.0, askPrice=0.0, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+            Quote(eventSymbol='LC', bidPrice=0.09, askPrice=0.11, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+            Quote(eventSymbol='LP', bidPrice=0.09, askPrice=0.11, bidTime=0, bidExchangeCode='X', askTime=0, askExchangeCode='X', eventTime=0, sequence=0, timeNanoPart=0),
+        ]
+
+        async def mock_listen(event_type):
+            yield quotes
+
+        mock_streamer_instance.listen = MagicMock(side_effect=mock_listen)
+        asyncio.run(check_open_positions(mock_session, self.csv_path))
+
+        df = pd.read_csv(self.csv_path)
+        self.assertEqual(df.iloc[0]['Status'], 'OPEN')
+
 
 class TestEODExpiration(unittest.TestCase):
     """Tests for check_eod_expiration settlement logic."""

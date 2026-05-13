@@ -5,8 +5,8 @@ OrbStackingEngine driven by live DXLink bars or a historical replay.
 No orders are placed. Safe to run alongside the live bot.
 
 Usage:
-  python orb_stacking_demo.py                        # live mode
-  python orb_stacking_demo.py --replay 2026-04-08   # replay mode
+  python tools/orb_stacking_demo.py                        # live mode
+  python tools/orb_stacking_demo.py --replay 2026-04-08   # replay mode
 """
 from __future__ import annotations
 
@@ -15,6 +15,11 @@ import asyncio
 import os
 import sys
 from datetime import date, datetime, timezone
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv
 from tastytrade import Session

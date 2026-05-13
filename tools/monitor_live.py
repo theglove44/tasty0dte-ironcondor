@@ -3,6 +3,8 @@ import asyncio
 import logging
 from dotenv import load_dotenv
 from tastytrade import Session
+
+import _bootstrap  # noqa: F401
 import monitor
 
 # Configure logging to suppress misc logs but show major info

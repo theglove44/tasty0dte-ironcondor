@@ -9,9 +9,9 @@ Turn iterations used BB(30) on 30m bars (needed 30). The --interval and
 check against.
 
 Usage:
-    python test_candle_depth.py                                   # 5m, report count only
-    python test_candle_depth.py --interval 5m --warmup-threshold 14
-    python test_candle_depth.py --interval 30m --warmup-threshold 30
+    python tools/probe_candle_depth.py                                   # 5m, report count only
+    python tools/probe_candle_depth.py --interval 5m --warmup-threshold 14
+    python tools/probe_candle_depth.py --interval 30m --warmup-threshold 30
 
 --days is calendar days, not trading days; weekends and holidays are
 included in the subtraction window. Run during market hours (or pre/post)

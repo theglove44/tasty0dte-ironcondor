@@ -10,9 +10,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from tastytrade import Session
-import strategy
 
-CSV_PATH = "paper_trades.csv"
+import _bootstrap  # noqa: F401
+import strategy
+from project_paths import PAPER_TRADES_CSV
+
+CSV_PATH = str(PAPER_TRADES_CSV)
 
 def parse_strike(symbol: str) -> float | None:
     """Extract strike from option symbol like .SPXW260217C6880"""

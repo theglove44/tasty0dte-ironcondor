@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from tastytrade.dxfeed import Quote
 
+from project_paths import PAPER_TRADES_CSV
 from premium_popper import _calculate_orb, _check_breakout, ORB_CANDLE_COUNT
 
 
@@ -281,7 +282,7 @@ class TestLoggerStopLoss(unittest.TestCase):
         if os.path.exists(self.csv_path):
             os.remove(self.csv_path)
         import logger as trade_logger
-        trade_logger.LOG_FILE = "paper_trades.csv"
+        trade_logger.LOG_FILE = str(PAPER_TRADES_CSV)
 
     def test_stop_loss_written(self):
         import logger as trade_logger

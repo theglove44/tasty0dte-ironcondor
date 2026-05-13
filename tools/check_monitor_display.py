@@ -1,4 +1,5 @@
 import pandas as pd
+import _bootstrap  # noqa: F401
 import monitor
 from unittest.mock import MagicMock
 import logging

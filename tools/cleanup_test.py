@@ -1,6 +1,9 @@
 import pandas as pd
 
-file_path = "paper_trades.csv"
+import _bootstrap  # noqa: F401
+from project_paths import PAPER_TRADES_CSV
+
+file_path = str(PAPER_TRADES_CSV)
 
 # Read
 df = pd.read_csv(file_path)

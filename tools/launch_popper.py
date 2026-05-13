@@ -15,6 +15,7 @@ import pytz
 from tastytrade import Session, DXLinkStreamer
 from tastytrade.dxfeed import Candle
 
+import _bootstrap  # noqa: F401
 import premium_popper
 
 

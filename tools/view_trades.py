@@ -2,8 +2,11 @@ import pandas as pd
 import os
 import sys
 
+import _bootstrap  # noqa: F401
+from project_paths import PAPER_TRADES_CSV
+
 def view_trades():
-    file_path = 'paper_trades.csv'
+    file_path = str(PAPER_TRADES_CSV)
     
     if not os.path.exists(file_path):
         print(f"Error: {file_path} not found.")

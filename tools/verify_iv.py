@@ -1,10 +1,13 @@
 import asyncio
 import os
-import logger as trade_logger
 from dotenv import load_dotenv
 from tastytrade import Session
+
+import _bootstrap  # noqa: F401
+import logger as trade_logger
 import strategy
 import pandas as pd
+from project_paths import PAPER_TRADES_CSV
 
 load_dotenv()
 
@@ -37,7 +40,7 @@ async def verify():
     print("Logged test trade.")
     
     print("\n--- 4. Verifying CSV Content ---")
-    df = pd.read_csv("paper_trades.csv")
+    df = pd.read_csv(PAPER_TRADES_CSV)
     print("Columns:", df.columns.tolist())
     
     if "IV Rank" not in df.columns:

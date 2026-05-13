@@ -2,9 +2,16 @@ import pandas as pd
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from project_paths import PAPER_TRADES_CSV
 
 def analyze_performance():
-    file_path = 'paper_trades.csv'
+    file_path = str(PAPER_TRADES_CSV)
     
     if not os.path.exists(file_path):
         print(f"Error: {file_path} not found.")
