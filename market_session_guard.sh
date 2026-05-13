@@ -17,7 +17,7 @@ RUNTIME_DIR="$REPO_DIR/runtime"
 LOG_DIR="$RUNTIME_DIR/logs"
 STATE_DIR="$RUNTIME_DIR/state"
 LOCKS_DIR="$RUNTIME_DIR/locks"
-PIDFILE="$STATE_DIR/.trader.pid"
+PIDFILE="$STATE_DIR/bot.pid"
 LOCKDIR="$LOCKS_DIR/.guard.lock"
 ENABLE_MARKER="$REPO_DIR/.guard_enabled"
 SESSION_CACHE="$STATE_DIR/market_session_cache.json"
@@ -54,7 +54,7 @@ NOW_EPOCH=$($PYTHON_BIN -c 'import time; print(int(time.time()))')
 
 # Mon–Fri only (UTC weekday: 0=Mon .. 6=Sun).
 if [[ $FORCE_RUN -eq 0 && $FORCE_STOP -eq 0 ]]; then
-  NOW_WD=$($PYTHON_BIN -c 'from datetime import datetime, UTC; print(datetime.now(UTC).weekday())')
+  NOW_WD=$($PYTHON_BIN -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).weekday())')
   if (( NOW_WD >= 5 )); then
     log "Weekend (weekday=$NOW_WD); exiting without changes."
     exit 0
@@ -145,19 +145,32 @@ fi
 
 # Determine if trader is running
 RUNNING_PID=""
+PIDFILE_PID=""
 if [[ -f "$PIDFILE" ]]; then
   pid=$(cat "$PIDFILE" 2>/dev/null || true)
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     RUNNING_PID="$pid"
+  elif [[ -n "$pid" ]]; then
+    PIDFILE_PID="$pid"
   else
     rm -f "$PIDFILE" 2>/dev/null || true
   fi
 fi
 
 if [[ -z "$RUNNING_PID" ]]; then
-  pid=$(/usr/bin/pgrep -f "main\.py" 2>/dev/null | /usr/bin/head -n 1 || true)
+  set +e
+  pgrep_out=$(/usr/bin/pgrep -f "main\.py" 2>/dev/null)
+  pgrep_status=$?
+  set -e
+  pid=$(printf '%s\n' "$pgrep_out" | /usr/bin/head -n 1)
   if [[ -n "$pid" ]]; then
     RUNNING_PID="$pid"
+    echo "$pid" > "$PIDFILE"
+  elif [[ -n "$PIDFILE_PID" && $pgrep_status -gt 1 ]]; then
+    RUNNING_PID="$PIDFILE_PID"
+    log "WARN: could not verify pidfile pid=$PIDFILE_PID with pgrep; assuming trader is running."
+  elif [[ -n "$PIDFILE_PID" ]]; then
+    rm -f "$PIDFILE" 2>/dev/null || true
   fi
 fi
 
