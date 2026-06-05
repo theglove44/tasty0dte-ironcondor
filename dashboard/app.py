@@ -194,4 +194,11 @@ def _system_context() -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=True)
+    # Bind host/port via env so the dashboard can be reached over the tailnet
+    # (e.g. HOST=0.0.0.0 to expose on the Tailscale interface). Debug/reloader
+    # is disabled when bound off-localhost — the Werkzeug debugger is an RCE
+    # surface and must never listen on a non-loopback address.
+    host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
+    port = int(os.environ.get("DASHBOARD_PORT", "5050"))
+    debug = host in ("127.0.0.1", "localhost")
+    app.run(host=host, port=port, debug=debug)
