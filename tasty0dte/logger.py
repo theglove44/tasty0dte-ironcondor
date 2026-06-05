@@ -127,19 +127,14 @@ def log_trade_entry(legs, credit, buying_power, profit_target, iv_rank=0.0, stra
 
     with open(LOG_FILE, mode='a', newline='') as file:
         ivr_val = float(iv_rank)
-        # Normalize if it looks like a ratio (e.g. 0.15 -> 15.0)
-        # But be careful if IVR is actually < 1.0 (e.g. 0.5).
-        # Usually IVR is 0-100. If it's consistently < 1 across the board we assume ratio.
-        # Ideally rely on knowledge of source. Tasty API usually gives 0-100 string or decimal.
-        # But previous data showed 0.126... which implies ratio.
-        # Let's assume if it is <= 1.0 and > 0, it is a ratio.
-        # However, IVR can naturally be 0.5 (percentile).
-        # A safer bet might be: if we see values > 1 in the wild, the source is 0-100.
-        # If the source is `metrics[0].implied_volatility_index_rank`, Tasty documentation says it's 0-100?
-        # Looking at previous CSV data: "13.54%" and "0.126410256".
-        # 0.126... is clearly 12.6%.
-        if 0 < ivr_val <= 1.0:
-             ivr_val *= 100.0
+        # Canonical storage scale is the 0-1 ratio. It matches the tastytrade SDK's
+        # native ``implied_volatility_index_rank``, the thresholds in
+        # ``analysis/common.iv_bin``, and the "store the ratio, multiply by 100 only
+        # for display" convention recorded in MEMORY.md.
+        # A true IV-rank ratio never exceeds 1.0, so any value > 1.5 must be a 0-100
+        # percentage handed in by some other source; scale it back down to the ratio.
+        if ivr_val > 1.5:
+            ivr_val /= 100.0
 
         writer = csv.writer(file)
         stop_loss_str = f"{float(stop_loss):.2f}" if stop_loss else ""
