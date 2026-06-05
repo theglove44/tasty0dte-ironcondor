@@ -123,6 +123,40 @@ def _mark_for_symbol(quotes, symbol):
     return _quote_mark(quotes.get(symbol))
 
 
+# Minimum hold time before profit-target checks fire for multi-day strategies.
+# Prevents phantom closes from stale/illiquid quotes on far-OTM multi-DTE legs
+# immediately after entry or after a stream reconnection.
+MULTI_DAY_MIN_HOLD_HOURS: float = 4.0
+
+
+def _multi_day_hold_elapsed(row) -> bool:
+    """Return True if a multi-day trade has been open long enough to be closed."""
+    try:
+        entry_dt_str = f"{row['Date']} {row['Entry Time']}"
+        entry_dt = datetime.strptime(entry_dt_str, "%Y-%m-%d %H:%M:%S")
+        elapsed_hours = (datetime.utcnow() - entry_dt).total_seconds() / 3600
+        return elapsed_hours >= MULTI_DAY_MIN_HOLD_HOURS
+    except Exception:
+        return True  # if we can't parse, allow close
+
+
+def _quotes_fresh(quotes, symbols: list[str], max_age_s: float = 60.0) -> bool:
+    """Return True if all symbols have quotes whose bid_time is within max_age_s seconds."""
+    now_ms = datetime.utcnow().timestamp() * 1000
+    for sym in symbols:
+        q = quotes.get(sym)
+        if q is None:
+            return False
+        bid_time = getattr(q, "bid_time", None)
+        if bid_time is None:
+            continue  # field absent — can't check, allow
+        # bid_time from DXLink is milliseconds since epoch
+        age_s = (now_ms - float(bid_time)) / 1000
+        if age_s > max_age_s:
+            return False
+    return True
+
+
 def _parse_strike_token(symbol):
     match = re.search(r'[CP](\d+)$', symbol)
     return match.group(1) if match else "?"
@@ -510,7 +544,22 @@ async def check_open_positions(session: Session, csv_path: str | None = None, re
                             and str(stop_loss_val).strip() != '' and float(stop_loss_val) > 0)
 
             if debit_to_close <= target_debit:
-                if read_only:
+                # Multi-day guard 1: minimum hold time before profit-target triggers.
+                # Far-OTM multi-DTE spreads have wide bid-ask, so the mid-price can
+                # swing wildly within minutes of entry or after a stream reconnect.
+                if _is_multi_day(strategy_name) and not _multi_day_hold_elapsed(row):
+                    status_lines.append(
+                        f"   >>> PROFIT TARGET (holding — min hold {MULTI_DAY_MIN_HOLD_HOURS:.0f}h not elapsed)"
+                    )
+                    logger.debug(f"Trade {index}: profit target met but min hold not elapsed, skipping.")
+                # Multi-day guard 2: require fresh quotes for all legs before closing.
+                elif _is_multi_day(strategy_name) and not _quotes_fresh(
+                    quotes,
+                    [row['Short Call'], row['Long Call'], row['Short Put'], row['Long Put']],
+                ):
+                    status_lines.append(f"   >>> PROFIT TARGET (holding — stale quotes, skipping close)")
+                    logger.warning(f"Trade {index}: profit target met but quotes are stale, skipping close.")
+                elif read_only:
                     status_lines.append(f"   >>> PROFIT TARGET REACHED (Read-Only)")
                 else:
                     logger.info(f"Profit Target Reached for Trade {index}! Closing...")
