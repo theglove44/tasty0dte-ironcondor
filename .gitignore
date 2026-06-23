@@ -79,3 +79,12 @@ archive/backups/*
 trade_analysis.md
 summary_*.csv
 skip_events.csv
+
+# Local analysis/deployment artifacts
+.wrangler/
+analysis/pages_deploy/
+data/live_trades.csv
+data/market_data_cache.json
+data/v1_backtest/
+data/v1_bt_cache.json
+data/v1_enriched.json
