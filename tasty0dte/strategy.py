@@ -600,8 +600,11 @@ async def find_iron_fly_legs(session: Session, options_list: list, target_delta:
                 logger.error(f"Cannot find Put at {atm_strike}. Aborting.")
                 return None
 
-    long_call = min(calls, key=lambda c: abs(c['strike'] - (atm_strike + wing_width)), default=None)
-    long_put = min(puts, key=lambda p: abs(p['strike'] - (atm_strike - wing_width)), default=None)
+    # Tie-break towards ATM (prefer tighter wing) when two strikes are equidistant
+    # from the target. Without this, min() picks arbitrarily and can select a wider
+    # wing than intended when the exact target strike is absent from the chain.
+    long_call = min(calls, key=lambda c: (abs(c['strike'] - (atm_strike + wing_width)), c['strike']), default=None)
+    long_put = min(puts, key=lambda p: (abs(p['strike'] - (atm_strike - wing_width)), -(p['strike'])), default=None)
 
     if not long_call or not long_put:
         logger.error(f"Could not find wings. ATM: {atm_strike}. Needed: +{wing_width}/-{wing_width}")
