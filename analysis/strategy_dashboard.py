@@ -18,11 +18,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import calendar
 import html as _html
 import re
 import sys
 import webbrowser
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -128,6 +129,54 @@ def bar_chart(labels, values, W=720, H=300, pad=44, dp=1, signed=True):
         vy = top - 5 if v >= 0 else top + h + 13
         out.append(f'<text x="{cx:.1f}" y="{vy:.1f}" text-anchor="middle" font-size="11" fill="{INK}">{money(v,dp) if signed else f"{v:.0f}"}</text>')
         out.append(f'<text x="{cx:.1f}" y="{H-pad+16:.0f}" text-anchor="middle" font-size="11" fill="{MUTED}">{esc(lab)}</text>')
+    return f'<svg viewBox="0 0 {W} {H}" width="100%" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
+
+
+def weekdays_in_month(year: int, month: int, upto_day: int | None = None) -> int:
+    """Mon-Fri count in a month (approx trading days; ignores market holidays)."""
+    last = calendar.monthrange(year, month)[1]
+    end = min(upto_day, last) if upto_day else last
+    return sum(1 for d in range(1, end + 1) if date(year, month, d).weekday() < 5)
+
+
+def monthly_bar_chart(labels, values, partial_label=None, projection=None,
+                      W=720, H=300, pad=44, dp=1):
+    """Like bar_chart, but renders `partial_label`'s bar hatched (month-to-date)
+    and, if `projection` is given, a dotted pace-projection outline above it."""
+    n = len(values)
+    if n == 0:
+        return ""
+    cand = list(values) + [0] + ([projection] if projection is not None else [])
+    vmax = max(cand); vmin = min(list(values) + [0]); span = (vmax - vmin) or 1.0
+    Y = lambda v: pad + (vmax - v) / span * (H - 2 * pad)
+    zeroY = Y(0); slot = (W - 2 * pad) / n; bw = slot * 0.62
+    out = [f'<defs>'
+           f'<pattern id="hpg" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="{GREEN}" stroke-width="2"/></pattern>'
+           f'<pattern id="hpr" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="{RED}" stroke-width="2"/></pattern>'
+           f'</defs>'
+           f'<line x1="{pad}" y1="{zeroY:.1f}" x2="{W-pad}" y2="{zeroY:.1f}" stroke="{MUTED}" stroke-width="1"/>']
+    for i, (lab, v) in enumerate(zip(labels, values)):
+        cx = pad + slot * (i + 0.5); x = cx - bw / 2
+        col = GREEN if v >= 0 else RED
+        is_partial = (lab == partial_label)
+        top = min(Y(v), zeroY); h = abs(Y(v) - zeroY)
+        if is_partial and projection is not None and abs(projection - v) > 1e-9:
+            pj_top = min(Y(projection), zeroY); pj_h = abs(Y(projection) - zeroY)
+            out.append(f'<rect x="{x:.1f}" y="{pj_top:.1f}" width="{bw:.1f}" height="{pj_h:.1f}" fill="none" '
+                       f'stroke="{col}" stroke-width="1.3" stroke-dasharray="3 3" rx="2" opacity="0.75"/>')
+            out.append(f'<text x="{cx:.1f}" y="{pj_top-5:.1f}" text-anchor="middle" font-size="10.5" '
+                       f'fill="{MUTED}" font-style="italic">~{money(projection,dp)} proj</text>')
+        if is_partial:
+            out.append(f'<rect x="{x:.1f}" y="{top:.1f}" width="{bw:.1f}" height="{h:.1f}" fill="{col}" fill-opacity="0.26" rx="2"/>')
+            out.append(f'<rect x="{x:.1f}" y="{top:.1f}" width="{bw:.1f}" height="{h:.1f}" fill="url(#{"hpg" if v>=0 else "hpr"})" rx="2"/>')
+            out.append(f'<rect x="{x:.1f}" y="{top:.1f}" width="{bw:.1f}" height="{h:.1f}" fill="none" stroke="{col}" stroke-dasharray="2 2" rx="2"/>')
+        else:
+            out.append(f'<rect x="{x:.1f}" y="{top:.1f}" width="{bw:.1f}" height="{h:.1f}" fill="{col}" rx="2"/>')
+        vy = top - 5 if v >= 0 else top + h + 13
+        out.append(f'<text x="{cx:.1f}" y="{vy:.1f}" text-anchor="middle" font-size="11" fill="{INK}">{money(v,dp)}</text>')
+        mlab = esc(lab) + (" ·MTD" if is_partial else "")
+        out.append(f'<text x="{cx:.1f}" y="{H-pad+16:.0f}" text-anchor="middle" font-size="11" '
+                   f'fill="{AMBER if is_partial else MUTED}">{mlab}</text>')
     return f'<svg viewBox="0 0 {W} {H}" width="100%" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
 
 
@@ -315,7 +364,18 @@ def build_html(strategy: str, df: pd.DataFrame) -> str:
 
     mo = df.groupby("Month")["Exit P/L"].agg(["size", "sum", "mean"])
     mo_lab = list(mo.index); mo_pl = [round(x, 2) for x in mo["sum"]]
-    mo_rows = [[ix, int(r["size"]), money(r["mean"]), money(r["sum"])] for ix, r in mo.iterrows()]
+    cur_month = datetime.now().strftime("%Y-%m")
+    partial_month = cur_month if cur_month in set(mo_lab) else None
+    projection = None
+    if partial_month:
+        yy, mm = int(cur_month[:4]), int(cur_month[5:7])
+        elapsed = weekdays_in_month(yy, mm, datetime.now().day)
+        total = weekdays_in_month(yy, mm)
+        s = float(mo.loc[cur_month, "sum"])
+        if elapsed > 0 and total > elapsed:
+            projection = round(s / elapsed * total, 2)
+    mo_rows = [[f"{ix} ·MTD" if ix == partial_month else ix, int(r["size"]),
+                money(r["mean"]), money(r["sum"])] for ix, r in mo.iterrows()]
 
     cols = ["Date", "Entry Time", "Exit Time", "reason", "Exit P/L", "Notes"]
     def trade_rows(sub):
@@ -359,7 +419,8 @@ def build_html(strategy: str, df: pd.DataFrame) -> str:
        + '<div style="height:8px"></div>' + underwater_chart(m["dd"]),
        f'Climb to {money(m["total"])}. Underwater plot shows drawdowns — worst episode {worst_ep}, max {money(m["maxdd"])}.')}
 <div class="grid">
-{panel("Monthly P/L", bar_chart(mo_lab, mo_pl))}
+{panel("Monthly P/L", monthly_bar_chart(mo_lab, mo_pl, partial_label=partial_month, projection=projection),
+       "Hatched bar = current month-to-date (partial); dotted outline = pace projection if the rest of the month trades at the same daily rate (approx — ignores holidays)." if partial_month else "")}
 {panel("P/L by day of week", bar_chart(dow_lab, dow_pl))}
 {panel("Exit-reason decomposition", bar_chart(er_labels, er_pl) + table(["Reason","n","W/L","Avg","Total"], er_rows),
        "How every trade ends. This is where the edge comes from.")}

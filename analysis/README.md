@@ -8,8 +8,11 @@ Reusable scripts for analysing `paper_trades.csv` and regenerating the public si
 |---|---|---|
 | `regenerate_site_data.py` | Rebuilds `public_site/data.js` from the CSV | Any CSV change |
 | `dedup_trades.py` | Finds & removes duplicate trade rows | Suspected double-logging from the bot |
+| `performance_report.py` | Cross-strategy leaderboard + entry-window report (text) | Weekly review |
 | `strategy_metrics.py` | Deep performance metrics for one strategy/bucket | Ad-hoc analysis |
 | `exit_analysis.py` | Exit-reason breakdown (profit-target / time-stop / settled) | Reviewing exit logic |
+| `strategy_dashboard.py` | Self-contained HTML dashboard for ONE strategy | Per-strategy review |
+| `overview_dashboard.py` | Active-roster HTML overview: findings, suggestions, evidence | Whole-roster review |
 
 ## Setup
 
@@ -84,6 +87,36 @@ python3 analysis/exit_analysis.py "Iron Fly V1"
 python3 analysis/exit_analysis.py "Iron Fly V1" --bucket 30
 python3 analysis/exit_analysis.py --all   # one-line summary per strategy
 ```
+
+### `strategy_dashboard.py` and `overview_dashboard.py` (HTML dashboards)
+
+Two offline, self-contained HTML dashboards (inline CSS + inline SVG charts, no server, no CDN — just open the file in a browser). Both use the standard `common.py` filters; `overview_dashboard.py` imports its chart/metric helpers from `strategy_dashboard.py`, so there's no duplicated logic.
+
+`strategy_dashboard.py` — one strategy, two tabs (Overview KPIs/charts + a full sortable/filterable trade ledger). Writes `analysis/dashboard_<Strategy>.html`:
+
+```bash
+python3 analysis/strategy_dashboard.py "Iron Fly V1"
+python3 analysis/strategy_dashboard.py "JadeLizard_5DTE" --include-private --open
+```
+
+`overview_dashboard.py` — the whole active roster on one page: top-line KPIs, **findings & suggestions** (each backed by computed data), a leaderboard ranked by return-on-capital that links to each per-strategy dashboard, equity curve, net/expectancy/ROC comparison bars, a win-rate-vs-payoff scatter, a monthly grid, exit-reason decomposition, the Iron Fly entry-window experiment, and a Jade Lizard tail-risk panel. Writes `analysis/dashboard_overview.html`:
+
+```bash
+python3 analysis/overview_dashboard.py
+python3 analysis/overview_dashboard.py --open
+```
+
+Regenerate the whole set after a CSV change:
+
+```bash
+for s in "Iron Fly V1" "Iron Fly V2" "Iron Fly V3" "Iron Fly V4" \
+         "JadeLizard_5DTE" "JadeLizard_7DTE" "JadeLizard_10DTE"; do
+  python3 analysis/strategy_dashboard.py "$s" --include-private
+done
+python3 analysis/overview_dashboard.py
+```
+
+> The active roster is an explicit list in `overview_dashboard.py` (the 7 strategies still trading after the 2026-06-05 trim) — deliberately **not** `performance_report.py --active-only`, whose 14-day "last traded" heuristic mis-classifies the roster (keeps disabled Dynamic/ORB in, drops multi-day JL10 out).
 
 ## Typical workflows
 
