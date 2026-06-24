@@ -638,7 +638,7 @@ async def find_iron_fly_legs(session: Session, options_list: list, target_delta:
 # See CLAUDE.md "Log Hierarchy" and the 2026-04-06 bug note in
 # memory/projects/0dte-bot.md for context.
 
-PARITY_TOLERANCE = 2.00          # dollars
+PARITY_TOLERANCE = 4.00          # dollars; opening put skew on SPX can reach $3-4 ATM
 MAX_CREDIT_CUSHION = 0.25        # dollars below wing width
 
 
