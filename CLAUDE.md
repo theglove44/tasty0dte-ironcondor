@@ -1,5 +1,9 @@
 # CLAUDE.md — 0DTE Iron Condor Bot
 
+## Full Reference
+
+Read **`AI_GUIDE.md`** for complete architecture, strategy set, guard logic, CSV schema, SDK patterns, DST handling, and gotchas. This file covers Claude-specific workflow rules only.
+
 ## Workflow
 
 ### Plan Mode Default

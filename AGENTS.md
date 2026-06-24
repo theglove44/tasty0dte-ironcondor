@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## Full Reference
+
+Before starting any non-trivial task, read **`AI_GUIDE.md`** in the project root. It covers architecture, the active strategy set, guard/validation logic, CSV schema, SDK patterns, DST handling, log hierarchy, and ~15 sharp-edge gotchas. This file covers only the quick-start essentials.
+
 ## Project Structure & Module Organization
 
 This is a Python 3.11+ paper-trading bot for SPX 0DTE strategies. Core runtime code lives in `tasty0dte/`: `main.py` schedules trade cycles, `strategy.py` selects option legs, `monitor.py` handles exits, and `logger.py` writes CSV records. Root modules with the same names are compatibility wrappers for existing scripts and tests. Strategy modules include `tasty0dte/premium_popper.py`, `tasty0dte/jade_lizard.py`, and the packaged ORB system in `orb_stacking/`.
