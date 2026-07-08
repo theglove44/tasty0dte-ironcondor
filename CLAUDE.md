@@ -57,9 +57,11 @@ When updating times for DST shifts, audit **every** hardcoded time in the codeba
 
 ## Key Files
 
-- `main.py` — Entry point, CLI args
-- `strategy.py` — Entry logic, strike selection
-- `monitor.py` — Position monitoring, profit targets, EOD
+Real implementation lives in the `tasty0dte/` package — root-level `main.py`, `strategy.py`, `monitor.py` are thin compatibility wrappers (`import_module("tasty0dte.<name>")`) kept for existing scripts/tests, not the primary code.
+
+- `tasty0dte/main.py` — Entry point, CLI args, schedules strategies, owns the SDK Session
+- `tasty0dte/strategy.py` — Entry logic, strike selection, fetches chain/Greeks/SPX spot
+- `tasty0dte/monitor.py` — Position monitoring, profit targets, EOD, the live-quote streaming loop that writes to `stdout.log`
 - `paper_trades.csv` — Trade history
 - `.spx_cache.json` — SPX price cache for EOD settlement
 
@@ -72,6 +74,8 @@ The `analysis/` directory contains reusable scripts for working with `paper_trad
 - `analysis/dedup_trades.py` — find and remove duplicate trade rows (Discord double-fires, etc.).
 - `analysis/strategy_metrics.py` — deep per-strategy metrics: streaks, drawdowns, IV regime, day-move sensitivity, exit clustering, autocorrelation.
 - `analysis/exit_analysis.py` — exit-reason breakdown (profit-target / time-stop / settled).
+- `analysis/generate_bt_dashboard.py` — builds the backtest dashboard (manual, run via `venv/bin/python analysis/generate_bt_dashboard.py`).
+- `tools/backtest_put_cs_0dte.py` — manual put-credit-spread 0DTE backtest script (run via `venv/bin/python tools/backtest_put_cs_0dte.py`).
 
 Default filters applied by every script: closed-only trades, private strategies excluded (`Premium Popper`, `ORB-STACK-*`, `JadeLizard_*`), anomalous-credit outliers excluded (Credit Collected > $30). Override with `--include-private` / `--keep-outliers` for ad-hoc personal analysis.
 
@@ -117,9 +121,9 @@ These files look scary but are not the trading bot. Do not cite errors from them
 **Rule of thumb: if a log has no timestamps, treat it as untrusted context, not evidence.**
 
 ### 6. Architecture layers (what talks to what)
-- `main.py` → schedules strategies, owns the SDK Session
-- `strategy.py` → fetches chain/Greeks/SPX spot, picks legs
-- `monitor.py` → the live-quote streaming loop that writes to `stdout.log`
+- `tasty0dte/main.py` (root `main.py` is just a compatibility wrapper) → schedules strategies, owns the SDK Session
+- `tasty0dte/strategy.py` (root `strategy.py` is just a compatibility wrapper) → fetches chain/Greeks/SPX spot, picks legs
+- `tasty0dte/monitor.py` (root `monitor.py` is just a compatibility wrapper) → the live-quote streaming loop that writes to `stdout.log`
 - `market_session_guard.sh` → independent shell watchdog, uses `curl` (NOT the bot's SDK session). Its failures do not affect the running bot.
 
 The bot uses the tastytrade Python SDK over a persistent authenticated HTTPS session — completely independent of the watchdog's curl polling. A curl timeout in the guard does not mean the bot lost its feed.
