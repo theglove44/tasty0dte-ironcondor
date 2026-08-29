@@ -4,8 +4,9 @@
 #
 cd "$(dirname "$0")"
 
-PID_FILE="runtime/state/bot.pid"
-STDOUT_LOG="runtime/logs/stdout.log"
+PRIVATE_ROOT="${TASTY_PRIVATE_DATA_ROOT:-${HOME}/Private/ProjectsData/trading/tasty0dte-ironcondor}"
+PID_FILE="$PRIVATE_ROOT/runtime/state/bot.pid"
+STDOUT_LOG="$PRIVATE_ROOT/runtime/logs/stdout.log"
 
 # Check PID file first
 if [ -f "$PID_FILE" ]; then

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Gap Checker Cron - Run at 1:45pm to validate overnight gap filter — US DST active
 
-cd ~/Projects/tasty0dte-ironcondor
+cd "$(dirname "$0")"
 
 # Activate venv and run gap check with gtimeout (or use python timeout)
 source venv/bin/activate

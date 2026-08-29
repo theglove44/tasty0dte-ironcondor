@@ -54,7 +54,9 @@ SKIPPED_DAYS = [
 CBBO_1S_START = date(2025, 2, 20)
 
 ROOT     = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data" / "v1_backtest"
+sys.path.insert(0, str(ROOT))
+from project_paths import BACKTEST_DATA_DIR  # noqa: E402
+DATA_DIR = BACKTEST_DATA_DIR
 
 
 def osi(expiry: date, side: str, strike: int) -> str:

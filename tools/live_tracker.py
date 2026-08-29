@@ -21,9 +21,10 @@ from flask import Flask, jsonify, request
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from project_paths import DATA_DIR, PAPER_TRADES_CSV  # noqa: E402
 
-LIVE_CSV = ROOT / "data" / "live_trades.csv"
-BOT_CSV = ROOT / "data" / "paper_trades.csv"
+LIVE_CSV = DATA_DIR / "live_trades.csv"
+BOT_CSV = PAPER_TRADES_CSV
 
 LIVE_FIELDS = ["Date", "Entry_Time", "ATM", "Call_Wing", "Put_Wing",
                "Credit", "Exit_Time", "Exit_Debit", "Net_PL", "Notes"]

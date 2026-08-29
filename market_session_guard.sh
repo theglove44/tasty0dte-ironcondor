@@ -7,13 +7,13 @@ set -euo pipefail
 #
 # SAFETY (rollout):
 # - OBSERVE-ONLY unless marker exists:
-#     /Users/office/Projects/tasty0dte-ironcondor/.guard_enabled
+#     <project-root>/.guard_enabled
 # - Manual tests:
 #     ./market_session_guard.sh --force-run
 #     ./market_session_guard.sh --force-stop
 
-REPO_DIR="/Users/office/Projects/tasty0dte-ironcondor"
-RUNTIME_DIR="$REPO_DIR/runtime"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_DIR="${TASTY_PRIVATE_DATA_ROOT:-${HOME}/Private/ProjectsData/trading/tasty0dte-ironcondor}/runtime"
 LOG_DIR="$RUNTIME_DIR/logs"
 STATE_DIR="$RUNTIME_DIR/state"
 LOCKS_DIR="$RUNTIME_DIR/locks"

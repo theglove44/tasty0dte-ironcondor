@@ -7,17 +7,22 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/run_autotrader.sh</string>
+        <string>/Users/office/Projects/trading/tasty0dte-ironcondor/run_autotrader.sh</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>WorkingDirectory</key>
-    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor</string>
+    <string>/Users/office/Projects/trading/tasty0dte-ironcondor</string>
     <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/runtime/logs/stdout.log</string>
+    <string>/Users/office/Private/ProjectsData/trading/tasty0dte-ironcondor/runtime/logs/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/Projects/tasty0dte-ironcondor/runtime/logs/stderr.log</string>
+    <string>/Users/office/Private/ProjectsData/trading/tasty0dte-ironcondor/runtime/logs/stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TASTY_PRIVATE_DATA_ROOT</key>
+        <string>/Users/office/Private/ProjectsData/trading/tasty0dte-ironcondor</string>
+    </dict>
 </dict>
 </plist>

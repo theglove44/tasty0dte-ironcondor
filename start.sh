@@ -4,7 +4,8 @@
 #
 cd "$(dirname "$0")"
 
-RUNTIME_DIR="runtime"
+PRIVATE_ROOT="${TASTY_PRIVATE_DATA_ROOT:-${HOME}/Private/ProjectsData/trading/tasty0dte-ironcondor}"
+RUNTIME_DIR="$PRIVATE_ROOT/runtime"
 LOG_DIR="$RUNTIME_DIR/logs"
 STATE_DIR="$RUNTIME_DIR/state"
 PID_FILE="$STATE_DIR/bot.pid"

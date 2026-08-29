@@ -22,10 +22,11 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from project_paths import DATA_DIR  # noqa: E402
 
-BT_CACHE = ROOT / "data" / "v1_bt_cache.json"
-MKT_CACHE = ROOT / "data" / "market_data_cache.json"
-ENRICHED_OUT = ROOT / "data" / "v1_enriched.json"
+BT_CACHE = DATA_DIR / "v1_bt_cache.json"
+MKT_CACHE = DATA_DIR / "market_data_cache.json"
+ENRICHED_OUT = DATA_DIR / "v1_enriched.json"
 
 DISCOVERY_END = date(2024, 12, 31)
 MIN_N = 30  # minimum bin size for reporting

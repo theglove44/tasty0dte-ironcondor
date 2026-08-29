@@ -4,6 +4,11 @@
 
 Read **`AI_GUIDE.md`** for complete architecture, strategy set, guard logic, CSV schema, SDK patterns, DST handling, and gotchas. This file covers Claude-specific workflow rules only.
 
+Private paper trades, runtime state, logs and generated reports live under
+`TASTY_PRIVATE_DATA_ROOT` (default:
+`/Users/office/Private/ProjectsData/trading/tasty0dte-ironcondor`). The canonical
+Tastytrade API reference is `../../shared/tastytrade-docs`.
+
 ## Workflow
 
 ### Plan Mode Default
@@ -62,8 +67,10 @@ Real implementation lives in the `tasty0dte/` package — root-level `main.py`, 
 - `tasty0dte/main.py` — Entry point, CLI args, schedules strategies, owns the SDK Session
 - `tasty0dte/strategy.py` — Entry logic, strike selection, fetches chain/Greeks/SPX spot
 - `tasty0dte/monitor.py` — Position monitoring, profit targets, EOD, the live-quote streaming loop that writes to `stdout.log`
-- `paper_trades.csv` — Trade history
-- `.spx_cache.json` — SPX price cache for EOD settlement
+- `paper_trades.csv` — Trade history. Lives at `$TASTY_PRIVATE_DATA_ROOT/data/paper_trades.csv`, not in the repo.
+- `.spx_cache.json` — SPX price cache for EOD settlement, at `$TASTY_PRIVATE_DATA_ROOT/runtime/state/.spx_cache.json`.
+
+`project_paths.py` resolves both (`PAPER_TRADES_CSV`, `SPX_CACHE_JSON`). Never hardcode a repo-root path for either.
 
 ## Analysis Scripts
 
@@ -90,6 +97,12 @@ python3 analysis/regenerate_site_data.py        # rebuild data.js
 
 **Before making any claim about bot health, read sources in this order and stop at the first one that answers the question. Do not guess from log filenames — most of them are noisy or unrelated to the trading bot.**
 
+**None of the files below are in the repository.** Every log named in this section lives in `$TASTY_PRIVATE_DATA_ROOT/runtime/logs/`, and persistent state in `$TASTY_PRIVATE_DATA_ROOT/data/` and `$TASTY_PRIVATE_DATA_ROOT/runtime/state/` (default root: `~/Private/ProjectsData/trading/tasty0dte-ironcondor`). Set a shell variable before running anything in this section:
+
+```bash
+LOGS="${TASTY_PRIVATE_DATA_ROOT:-$HOME/Private/ProjectsData/trading/tasty0dte-ironcondor}/runtime/logs"
+```
+
 ### 1. Is the bot running?
 ```
 ps aux | grep "main.py" | grep -v grep
@@ -102,7 +115,7 @@ PID + start time is ground truth. A running process means the bot is alive regar
 
 ### 3. Did anything break today?
 ```
-grep "^YYYY-MM-DD" trade.log | grep -iE "error|warning|exception|traceback|failed"
+grep "^$(date +%F)" "$LOGS/trade.log" | grep -iE "error|warning|exception|traceback|failed"
 ```
 Always scope grep to today's date. Empty result = clean session.
 

@@ -35,8 +35,10 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo("America/New_York")
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data" / "v1_backtest"
-CSV_PATH = ROOT / "data" / "paper_trades.csv"
+sys.path.insert(0, str(ROOT))
+from project_paths import BACKTEST_DATA_DIR, PAPER_TRADES_CSV  # noqa: E402
+DATA_DIR = BACKTEST_DATA_DIR
+CSV_PATH = PAPER_TRADES_CSV
 
 WING_WIDTH = 10          # dollars either side of ATM
 PROFIT_TARGET_PCT = 0.10 # take off when current debit ≤ initial_credit × (1 − 0.10)
@@ -60,16 +62,22 @@ class Trade:
     entry_credit_real: float
     exit_time: datetime
     exit_debit_mid: float
+    exit_debit_real: float
     exit_reason: str            # "PT" or "TS"
     pl_mid: float = field(init=False)
     pl_real: float = field(init=False)
 
     def __post_init__(self) -> None:
-        self.pl_mid = round(self.entry_credit_mid - self.exit_debit_mid, 4)
+        self.pl_mid  = round(self.entry_credit_mid  - self.exit_debit_mid,  4)
+        self.pl_real = round(self.entry_credit_real - self.exit_debit_real, 4)
 
     @property
     def win_mid(self) -> bool:
         return self.pl_mid > 0
+
+    @property
+    def win_real(self) -> bool:
+        return self.pl_real > 0
 
 
 # ---------------------------------------------------------------------------
@@ -192,10 +200,12 @@ def running_debit(df_minute, atm: int) -> float | None:
 # ---------------------------------------------------------------------------
 
 def _monitor_1s(df_legs, atm: int, initial_credit: float,
-                entry_dt: datetime, exit_limit: datetime) -> tuple[datetime, float, str]:
+                entry_dt: datetime, exit_limit: datetime,
+                no_pt: bool = False) -> tuple[datetime, float, float, str]:
     """
     Second-by-second exit monitoring using the Phase 2 cbbo-1s leg file.
-    Returns (exit_time, final_debit, reason).
+    Returns (exit_time, mid_debit, real_debit, reason).
+    real_debit = cost to close at natural price (ask for shorts, bid for longs).
     """
     import pandas as pd
 
@@ -210,44 +220,57 @@ def _monitor_1s(df_legs, atm: int, initial_credit: float,
 
     df["ts_s"] = df["ts_et"].dt.floor("s")
 
-    # Build per-symbol ts→mid dicts: avoids per-second pandas overhead entirely.
-    # Each legs file has exactly 4 symbols (~11k rows each), so 4 small filters.
-    # Only store positive, non-NaN values so NaN mid prices never reach debit calc.
     def _ts_mid(side: str, strike: int) -> dict:
         sub = df[(df["side"] == side) & (df["strike"] == strike)]
         return {ts: m for ts, m in zip(sub["ts_s"], sub["mid"]) if m == m and m > 0}
 
-    c_atm = _ts_mid("C", atm)
-    p_atm = _ts_mid("P", atm)
-    c_lc  = _ts_mid("C", lc_strike)
-    p_lp  = _ts_mid("P", lp_strike)
+    def _ts_ask(side: str, strike: int) -> dict:
+        sub = df[(df["side"] == side) & (df["strike"] == strike)]
+        return {ts: a for ts, a in zip(sub["ts_s"], sub["ask"]) if a == a and a > 0}
+
+    def _ts_bid(side: str, strike: int) -> dict:
+        sub = df[(df["side"] == side) & (df["strike"] == strike)]
+        return {ts: b for ts, b in zip(sub["ts_s"], sub["bid"]) if b == b and b > 0}
+
+    c_atm_mid = _ts_mid("C", atm);   p_atm_mid = _ts_mid("P", atm)
+    c_lc_mid  = _ts_mid("C", lc_strike); p_lp_mid = _ts_mid("P", lp_strike)
+    c_atm_ask = _ts_ask("C", atm);   p_atm_ask = _ts_ask("P", atm)
+    c_lc_bid  = _ts_bid("C", lc_strike); p_lp_bid = _ts_bid("P", lp_strike)
 
     seconds = sorted(df["ts_s"].unique())
 
     last_debit = None
+    last_real_debit = None
     for ts in seconds:
         if ts <= entry_dt:
             continue
         if ts > exit_limit:
             break
 
-        sc = c_atm.get(ts, 0.0)
-        sp = p_atm.get(ts, 0.0)
+        sc = c_atm_mid.get(ts, 0.0)
+        sp = p_atm_mid.get(ts, 0.0)
         if sc == 0.0 or sp == 0.0:
             continue
-        lc = c_lc.get(ts, 0.0)
-        lp = p_lp.get(ts, 0.0)
+        lc = c_lc_mid.get(ts, 0.0)
+        lp = p_lp_mid.get(ts, 0.0)
         debit = sc + sp - lc - lp
         last_debit = debit
 
-        if debit <= target_debit:
-            return ts, debit, "PT"
+        sc_ask = c_atm_ask.get(ts, sc + 0.10)
+        sp_ask = p_atm_ask.get(ts, sp + 0.10)
+        lc_bid = c_lc_bid.get(ts, max(lc - 0.05, 0.0))
+        lp_bid = p_lp_bid.get(ts, max(lp - 0.05, 0.0))
+        real_debit = sc_ask + sp_ask - lc_bid - lp_bid
+        last_real_debit = real_debit
 
-    return exit_limit, last_debit or 0.0, "TS"
+        if not no_pt and debit <= target_debit:
+            return ts, debit, real_debit, "PT"
+
+    return exit_limit, last_debit or 0.0, last_real_debit or 0.0, "TS"
 
 
 def simulate_day(day: date, df_raw, mode: str = "mid",
-                 df_legs_1s=None) -> Trade | None:
+                 df_legs_1s=None, no_pt: bool = False) -> Trade | None:
     """
     Replay one trading day. Returns a Trade or None (no entry / no data).
 
@@ -296,31 +319,37 @@ def simulate_day(day: date, df_raw, mode: str = "mid",
 
     # ---- 1-second exit monitoring (Phase 2) ----
     if df_legs_1s is not None and not df_legs_1s.empty:
-        exit_dt, final_debit, exit_reason = _monitor_1s(
-            df_legs_1s, atm, ec_mid, entry_dt, exit_limit
+        exit_dt, final_debit, final_real_debit, exit_reason = _monitor_1s(
+            df_legs_1s, atm, ec_mid, entry_dt, exit_limit, no_pt=no_pt
         )
         if final_debit == 0.0:
             final_debit = None
+        if final_real_debit == 0.0:
+            final_real_debit = None
     else:
         # ---- Fallback: 1-minute monitoring ----
-        # Pre-build per-symbol ts→mid dicts for O(1) lookup (avoids per-minute pandas ops)
         lc_strike = atm + WING_WIDTH
         lp_strike = atm - WING_WIDTH
         df["ts_min"] = ts_floored
 
-        def _mid_1m(side: str, strike: int) -> dict:
+        def _col_1m(side: str, strike: int, col: str) -> dict:
             sub = df[(df["side"] == side) & (df["strike"] == strike)]
-            return {ts: m for ts, m in zip(sub["ts_min"], sub["mid"]) if m == m and m > 0}
+            return {ts: v for ts, v in zip(sub["ts_min"], sub[col]) if v == v and v > 0}
 
-        c_atm_m = _mid_1m("C", atm)
-        p_atm_m = _mid_1m("P", atm)
-        c_lc_m  = _mid_1m("C", lc_strike)
-        p_lp_m  = _mid_1m("P", lp_strike)
+        c_atm_m   = _col_1m("C", atm,       "mid")
+        p_atm_m   = _col_1m("P", atm,       "mid")
+        c_lc_m    = _col_1m("C", lc_strike, "mid")
+        p_lp_m    = _col_1m("P", lp_strike, "mid")
+        c_atm_ask = _col_1m("C", atm,       "ask")
+        p_atm_ask = _col_1m("P", atm,       "ask")
+        c_lc_bid  = _col_1m("C", lc_strike, "bid")
+        p_lp_bid  = _col_1m("P", lp_strike, "bid")
 
         minutes = sorted(ts_floored.unique())
-        exit_dt     = exit_limit
-        exit_reason = "TS"
-        final_debit = None
+        exit_dt          = exit_limit
+        exit_reason      = "TS"
+        final_debit      = None
+        final_real_debit = None
 
         for minute in minutes:
             if minute <= entry_dt:
@@ -333,7 +362,14 @@ def simulate_day(day: date, df_raw, mode: str = "mid",
             lp = p_lp_m.get(minute, 0.0)
             debit = sc + sp - lc - lp
             final_debit = debit
-            if debit <= target_debit:
+
+            sc_ask = c_atm_ask.get(minute, sc + 0.10)
+            sp_ask = p_atm_ask.get(minute, sp + 0.10)
+            lc_bid = c_lc_bid.get(minute, max(lc - 0.05, 0.0))
+            lp_bid = p_lp_bid.get(minute, max(lp - 0.05, 0.0))
+            final_real_debit = sc_ask + sp_ask - lc_bid - lp_bid
+
+            if not no_pt and debit <= target_debit:
                 exit_reason = "PT"
                 exit_dt = minute
                 break
@@ -348,6 +384,7 @@ def simulate_day(day: date, df_raw, mode: str = "mid",
         entry_credit_real=round(ec_real or 0.0, 4),
         exit_time=exit_dt,
         exit_debit_mid=round(final_debit, 4),
+        exit_debit_real=round(final_real_debit or final_debit, 4),
         exit_reason=exit_reason,
     )
 
@@ -434,43 +471,57 @@ def print_report(trades: list[Trade]) -> None:
         print("No trades simulated.")
         return
 
-    wins   = [t for t in trades if t.win_mid]
-    losses = [t for t in trades if not t.win_mid]
-    total_pl = sum(t.pl_mid for t in trades)
-    avg_pl   = total_pl / len(trades)
-    wr       = len(wins) / len(trades) * 100
-    avg_win  = sum(t.pl_mid for t in wins)  / max(len(wins), 1)
-    avg_loss = sum(t.pl_mid for t in losses) / max(len(losses), 1)
-    payoff   = abs(avg_win / avg_loss) if avg_loss and avg_win else 0.0
-    pts      = [t for t in trades if t.exit_reason == "PT"]
-    tss      = [t for t in trades if t.exit_reason == "TS"]
+    wins_m  = [t for t in trades if t.win_mid]
+    wins_r  = [t for t in trades if t.win_real]
+    loss_m  = [t for t in trades if not t.win_mid]
+    loss_r  = [t for t in trades if not t.win_real]
 
-    print(f"\n{'='*60}")
+    total_mid  = sum(t.pl_mid  for t in trades)
+    total_real = sum(t.pl_real for t in trades)
+    avg_mid    = total_mid  / len(trades)
+    avg_real   = total_real / len(trades)
+    wr_m = len(wins_m) / len(trades) * 100
+    wr_r = len(wins_r) / len(trades) * 100
+
+    aw_m = sum(t.pl_mid  for t in wins_m) / max(len(wins_m), 1)
+    al_m = sum(t.pl_mid  for t in loss_m) / max(len(loss_m), 1)
+    aw_r = sum(t.pl_real for t in wins_r) / max(len(wins_r), 1)
+    al_r = sum(t.pl_real for t in loss_r) / max(len(loss_r), 1)
+
+    payoff_m = abs(aw_m / al_m) if al_m and aw_m else 0.0
+    payoff_r = abs(aw_r / al_r) if al_r and aw_r else 0.0
+    pts = [t for t in trades if t.exit_reason == "PT"]
+    tss = [t for t in trades if t.exit_reason == "TS"]
+
+    print(f"\n{'='*65}")
     print(f"IRON FLY V1 BACKTEST RESULTS  ({len(trades)} sessions)")
-    print(f"{'='*60}")
-    print(f"  Total P/L (mid)   : ${total_pl:+.2f}")
-    print(f"  Avg P/L / trade   : ${avg_pl:+.4f}")
-    print(f"  Win rate          : {wr:.1f}%  ({len(wins)}W / {len(losses)}L)")
-    print(f"  Avg win           : ${avg_win:+.2f}")
-    print(f"  Avg loss          : ${avg_loss:+.2f}")
-    print(f"  Payoff ratio      : {payoff:.2f}x")
-    print(f"  PT exits          : {len(pts)}  ({len(pts)/len(trades)*100:.1f}%)")
-    print(f"  TS exits          : {len(tss)}  ({len(tss)/len(trades)*100:.1f}%)")
+    print(f"{'='*65}")
+    print(f"  {'':25s}  {'MID (paper)':>12}  {'REAL (bid/ask)':>14}")
+    print(f"  {'-'*53}")
+    print(f"  {'Total P/L':25s}  ${total_mid:>+10.2f}  ${total_real:>+12.2f}")
+    print(f"  {'Avg P/L / trade':25s}  ${avg_mid:>+10.4f}  ${avg_real:>+12.4f}")
+    print(f"  {'Win rate':25s}  {wr_m:>10.1f}%  {wr_r:>12.1f}%")
+    print(f"  {'Avg win':25s}  ${aw_m:>+10.2f}  ${aw_r:>+12.2f}")
+    print(f"  {'Avg loss':25s}  ${al_m:>+10.2f}  ${al_r:>+12.2f}")
+    print(f"  {'Payoff ratio':25s}  {payoff_m:>10.2f}x  {payoff_r:>12.2f}x")
+    print(f"  {'Round-trip slippage':25s}  {'':12s}  ${(total_mid - total_real)/len(trades):>+12.4f}/trade")
+    print(f"  {'-'*53}")
+    print(f"  PT exits : {len(pts)}  ({len(pts)/len(trades)*100:.1f}%)")
+    print(f"  TS exits : {len(tss)}  ({len(tss)/len(trades)*100:.1f}%)")
 
-    # Monthly breakdown
     by_month: dict[str, list[Trade]] = defaultdict(list)
     for t in trades:
         by_month[t.date.strftime("%Y-%m")].append(t)
 
-    print(f"\n  Monthly P/L (mid-fill):")
-    print(f"  {'Month':<8}  {'Trades':>6}  {'P/L':>8}  {'WR':>7}")
+    print(f"\n  {'Month':<8}  {'Trades':>6}  {'Mid P/L':>9}  {'Real P/L':>9}  {'WR(mid)':>8}")
     for month in sorted(by_month):
-        mt = by_month[month]
-        mpl = sum(t.pl_mid for t in mt)
+        mt  = by_month[month]
+        mpl = sum(t.pl_mid  for t in mt)
+        rpl = sum(t.pl_real for t in mt)
         mwr = sum(1 for t in mt if t.win_mid) / len(mt) * 100
-        print(f"  {month:<8}  {len(mt):>6}  {mpl:>+8.2f}  {mwr:>6.1f}%")
+        print(f"  {month:<8}  {len(mt):>6}  {mpl:>+9.2f}  {rpl:>+9.2f}  {mwr:>7.1f}%")
 
-    print(f"{'='*60}")
+    print(f"{'='*65}")
 
     # Entry credit distribution
     credits = sorted(t.entry_credit_mid for t in trades)
@@ -499,6 +550,8 @@ def main() -> None:
                         help="mid = mid-mark fills; real = bid/ask fills")
     parser.add_argument("--reconcile", action="store_true",
                         help="Cross-check backtest vs paper_trades.csv on overlapping dates")
+    parser.add_argument("--no-pt", action="store_true",
+                        help="Disable profit target — every trade runs to time-stop (simulates live fill difficulty)")
     args = parser.parse_args()
 
     try:
@@ -555,7 +608,7 @@ def main() -> None:
         if day in legs_files:
             df_legs = pd.read_parquet(legs_files[day])
 
-        trade = simulate_day(day, df, mode=args.mode, df_legs_1s=df_legs)
+        trade = simulate_day(day, df, mode=args.mode, df_legs_1s=df_legs, no_pt=args.no_pt)
         if trade is None:
             skipped += 1
             print(f"  {day}  SKIP — no valid entry (missing data or zero credit)")

@@ -54,7 +54,9 @@ WING_WIDTH  = 10   # iron fly wing width in dollars (must match backtest_iron_fl
 BACKTEST_START_DEFAULT = date(2022, 5, 23)
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data" / "v1_backtest"
+sys.path.insert(0, str(ROOT))
+from project_paths import BACKTEST_DATA_DIR  # noqa: E402
+DATA_DIR = BACKTEST_DATA_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +397,7 @@ def main() -> None:
                         print(f"    → no data returned")
                         continue
                     path = save_legs(df_out, day, atm)
-                    print(f"    → saved {len(df_out):,} rows → {path.relative_to(ROOT)}")
+                    print(f"    → saved {len(df_out):,} rows → {path}")
                     downloaded += 1
                 except Exception as e:
                     print(f"    → ERROR: {e}")
@@ -463,7 +465,7 @@ def main() -> None:
                     print(f"    → no data returned (market closed / holiday)")
                     continue
                 path = save_day(df, day)
-                print(f"    → saved {len(df):,} rows → {path.relative_to(ROOT)}")
+                print(f"    → saved {len(df):,} rows → {path}")
                 downloaded += 1
             except Exception as e:
                 print(f"    → ERROR: {e}")
@@ -473,7 +475,7 @@ def main() -> None:
     if args.skip_existing and skipped:
         print(f"Skipped (existing)   : {skipped} days")
     if args.confirm:
-        print(f"Downloaded           : {downloaded} days → {DATA_DIR.relative_to(ROOT)}/")
+        print(f"Downloaded           : {downloaded} days → {DATA_DIR}/")
         print()
         print("Next (Phase 2): venv/bin/python tools/fetch_v1_backtest_data.py --legs --confirm --skip-existing")
     else:

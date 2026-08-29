@@ -88,3 +88,4 @@ data/market_data_cache.json
 data/v1_backtest/
 data/v1_bt_cache.json
 data/v1_enriched.json
+data/chain_capture/

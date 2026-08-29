@@ -4,7 +4,8 @@
 SERVICE_NAME="com.${USER}.tasty0dte"
 PLIST_NAME="${SERVICE_NAME}.plist"
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-LOG_DIR="${PROJECT_DIR}/runtime/logs"
+PRIVATE_ROOT="${TASTY_PRIVATE_DATA_ROOT:-${HOME}/Private/ProjectsData/trading/tasty0dte-ironcondor}"
+LOG_DIR="${PRIVATE_ROOT}/runtime/logs"
 LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 PLIST_DEST="${LAUNCH_AGENTS_DIR}/${PLIST_NAME}"
 
@@ -45,6 +46,11 @@ cat > "${PROJECT_DIR}/${PLIST_NAME}" <<EOF
     <string>${LOG_DIR}/stdout.log</string>
     <key>StandardErrorPath</key>
     <string>${LOG_DIR}/stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TASTY_PRIVATE_DATA_ROOT</key>
+        <string>${PRIVATE_ROOT}</string>
+    </dict>
 </dict>
 </plist>
 EOF

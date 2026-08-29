@@ -26,6 +26,8 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT))
+from project_paths import ARTIFACTS_DIR, BACKTEST_DATA_DIR, PAPER_TRADES_CSV  # noqa: E402
 
 import pandas as pd                        # noqa: E402
 
@@ -34,10 +36,10 @@ import pandas as pd                        # noqa: E402
 # ---------------------------------------------------------------------------
 
 ET          = ZoneInfo("America/New_York")
-CSV_PATH    = ROOT / "data" / "paper_trades.csv"
-DATA_DIR    = ROOT / "data" / "v1_backtest"
-CACHE_PATH  = ROOT / "data" / "v1_bt_cache.json"
-OUT_PATH    = ROOT / "analysis" / "dashboard_bt_vs_live.html"
+CSV_PATH    = PAPER_TRADES_CSV
+DATA_DIR    = BACKTEST_DATA_DIR
+CACHE_PATH  = DATA_DIR.parent / "v1_bt_cache.json"
+OUT_PATH    = ARTIFACTS_DIR / "analysis" / "dashboard_bt_vs_live.html"
 
 BT_START    = date(2022, 5, 23)
 BT_END      = date(2026, 6, 19)          # extend to today if data exists
