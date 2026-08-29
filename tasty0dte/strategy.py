@@ -4,7 +4,6 @@ from tastytrade.instruments import NestedOptionChain, Option
 from tastytrade.dxfeed import Summary
 from tastytrade.market_data import get_market_data_by_type
 from tastytrade.utils import get_tasty_monthly
-import pandas as pd
 import logging
 import inspect
 

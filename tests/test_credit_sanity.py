@@ -62,7 +62,7 @@ class TestValidateCreditSanity(unittest.TestCase):
         Reproduces 2026-04-06 V1: SPX 6607, strike 6600.
           C - P = 20.25 - 17.35 = 2.90
           expected = spot - strike = 7.19
-          drift = 4.29  > 2.00 tolerance
+          drift = 4.29  > 4.00 tolerance
         """
         legs = _legs(6600, 20.25, 6610, 14.25,
                      6600, 17.35, 6590, 13.35)
@@ -105,19 +105,19 @@ class TestValidateCreditSanity(unittest.TestCase):
 
     def test_parity_tolerance_edge(self):
         """Drift exactly at tolerance should pass; just over should fail."""
-        # spot - strike = 5.00; at tolerance: C-P = 3.00 (drift=2.00)
+        # spot - strike = 5.00; at tolerance: C-P = 1.00 (drift=$4.00)
         legs_ok = _legs(6600, 8.00, 6610, 4.00,
-                        6600, 5.00, 6590, 3.00)
+                        6600, 7.00, 6590, 3.00)
         valid, _ = strategy.validate_credit_sanity(
             legs_ok, credit=6.00, wing_width=10, spx_spot=6605
         )
         self.assertTrue(valid)
 
-        # Just over: drift = 2.01
+        # Just over: drift = $4.01
         legs_bad = _legs(6600, 8.00, 6610, 4.00,
-                         6600, 5.01, 6590, 3.00)
+                         6600, 7.01, 6590, 3.00)
         valid, _ = strategy.validate_credit_sanity(
-            legs_bad, credit=5.99, wing_width=10, spx_spot=6605
+            legs_bad, credit=3.99, wing_width=10, spx_spot=6605
         )
         self.assertFalse(valid)
 

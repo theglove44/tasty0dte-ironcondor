@@ -3,11 +3,37 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date, datetime, time
+from types import SimpleNamespace
 import pandas as pd
 import tempfile
 import csv
 
-from monitor import _is_multi_day, _parse_target_expiry_from_notes
+from monitor import _is_multi_day, _parse_target_expiry_from_notes, _quotes_fresh
+
+
+class TestQuotesFresh(unittest.TestCase):
+    """Quote timestamps protect multi-day profit-target closes."""
+
+    def test_missing_quote_is_not_fresh(self):
+        self.assertFalse(_quotes_fresh({}, ["SPXW 123"]))
+
+    def test_none_bid_time_is_allowed(self):
+        quote = SimpleNamespace(bid_time=None)
+        self.assertTrue(_quotes_fresh({"SPXW 123": quote}, ["SPXW 123"]))
+
+    def test_zero_bid_time_is_allowed(self):
+        quote = SimpleNamespace(bid_time=0)
+        self.assertTrue(_quotes_fresh({"SPXW 123": quote}, ["SPXW 123"]))
+
+    def test_recent_bid_time_is_fresh(self):
+        recent_ms = datetime.utcnow().timestamp() * 1000 - 10_000
+        quote = SimpleNamespace(bid_time=recent_ms)
+        self.assertTrue(_quotes_fresh({"SPXW 123": quote}, ["SPXW 123"]))
+
+    def test_bid_time_older_than_default_window_is_stale(self):
+        stale_ms = datetime.utcnow().timestamp() * 1000 - 120_000
+        quote = SimpleNamespace(bid_time=stale_ms)
+        self.assertFalse(_quotes_fresh({"SPXW 123": quote}, ["SPXW 123"]))
 
 
 class TestIsMultiDay(unittest.TestCase):
