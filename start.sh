@@ -28,9 +28,12 @@ fi
 
 echo "Starting bot..."
 
-# Activate venv and start
-source venv/bin/activate
-caffeinate -i python -u main.py >> "$STDOUT_LOG" 2>> "$STDERR_LOG" &
+PYTHON="./venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    echo "Error: $PYTHON not found"
+    exit 1
+fi
+caffeinate -i "$PYTHON" -u main.py >> "$STDOUT_LOG" 2>> "$STDERR_LOG" &
 BOT_PID=$!
 
 echo "$BOT_PID" > "$PID_FILE"

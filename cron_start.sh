@@ -36,11 +36,12 @@ fi
 
 echo "[$(date)] Starting bot for trading session..."
 
-# Activate venv and start in background
-source venv/bin/activate
-
-# Start with caffeinate, capture the caffeinate PID (parent of python)
-caffeinate -i python -u main.py >> "$STDOUT_LOG" 2>> "$STDERR_LOG" &
+PYTHON="./venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    echo "[$(date)] Error: $PYTHON not found"
+    exit 1
+fi
+caffeinate -i "$PYTHON" -u main.py >> "$STDOUT_LOG" 2>> "$STDERR_LOG" &
 BOT_PID=$!
 
 # Write PID file

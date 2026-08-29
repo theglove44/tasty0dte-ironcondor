@@ -3,10 +3,13 @@
 
 cd "$(dirname "$0")"
 
-# Activate venv and run gap check with gtimeout (or use python timeout)
-source venv/bin/activate
+PYTHON="./venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+  echo "Error: $PYTHON not found"
+  exit 1
+fi
 
-python -c "
+"$PYTHON" -c "
 import asyncio
 import sys
 sys.path.insert(0, '.')
