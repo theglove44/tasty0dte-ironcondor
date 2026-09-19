@@ -34,7 +34,7 @@ The bot's default private data root is controlled by `TASTY_PRIVATE_DATA_ROOT` a
 
 4. **Position monitoring.** The monitor runs roughly every 10 seconds. It reads `OPEN` rows from the paper ledger, subscribes to DXLink quotes for their legs, calculates the debit needed to close and current profit, and closes paper positions when profit targets, stop losses, or time exits are reached. It rejects obviously corrupt quotes rather than declaring a false profit.
 
-5. **Settlement and review.** After the UK market-close threshold, remaining 0DTE positions are settled from the SPX close. The monitor tries REST data first, then a dxFeed Summary event, then the same-day cached SPX price. Jade Lizard positions use multi-day hold/freshness rules and are intrinsically settled only on their recorded target expiry. The dashboard and analysis scripts then read the ledger for operational and performance review.
+5. **Settlement and review.** After the UK market-close threshold, remaining 0DTE positions are settled from the SPX close. The monitor tries REST data first, then a dxFeed Summary event, then the same-day cached SPX price. Jade Lizard positions use multi-day hold and two-sided-quote rules and are intrinsically settled only on their recorded target expiry. The dashboard and analysis scripts then read the ledger for operational and performance review.
 
 ## Major parts
 
@@ -101,7 +101,7 @@ Tests are heavily mocked and are intended to avoid live market calls. Do not run
 1. **Time drift.** The scheduler, per-strategy allowed times, cron, dashboard session display, and ORB time utilities do not all share one configuration object.
 2. **Duplicate configuration.** `tasty0dte/main.py` is the active strategy source. `dashboard/config.py` contains a separate, currently stale display copy and must not be treated as the trading roster.
 3. **Shared CSV changes.** Renaming columns, changing status values, or moving the ledger affects the bot, monitor, dashboard, analysis, and migration code.
-4. **Quote freshness.** REST marks, DXLink quotes, and cached settlement prices have different timing and reliability. Do not remove the sanity/freshness guards without a test and a rollback plan.
+4. **Quote quality.** REST marks, DXLink quotes, and cached settlement prices have different timing and reliability. Jade Lizard profit takes require a two-sided book (bid and ask on every leg), not a 60-second timestamp. Do not remove the sanity or two-sided guards without a test and a rollback plan.
 5. **Optional integrations.** Discord, X/Twitter, Databento, and the local macOS service are outside the core paper ledger and may be absent or unavailable. The bot generally treats notifications as best-effort, but capture/deployment scripts can fail when their dependencies or credentials are missing.
 
 ## Where to look next

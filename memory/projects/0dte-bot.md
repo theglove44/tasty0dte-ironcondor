@@ -2,6 +2,12 @@
 
 ## Bugs & Fixes
 
+### Jade Lizard 25% take blocked by 60s quote clock (2026-09-19) [FIXED]
+- **Problem**: Full-credit `EXPIRED` wins on Jade Lizard. A 25% take-profit system should almost never keep 100% by expiry. Logs showed thousands of `profit target met but quotes are stale, skipping close` then intrinsic settlement booked the full credit.
+- **Root cause**: `_quotes_fresh` required every leg's `bid_time` within 60s. Far-OTM SPXW often has a valid two-sided book with an older stamp, so the 25% print was skipped until expiry. Separate issue: a 10DTE row missed 2026-08-17 EOD because the bot was down (manual CSV settle at FRED close 7745.06, +$4.80).
+- **Fix**: Replace the timestamp check with `_quotes_two_sided` (bid > 0 and ask > 0 on all four legs). Keep the 4h min hold and debit sanity guard. Do not change expiry maths.
+- **Prevention**: Illiquid multi-day options do not reprint every minute. Gate closes on a two-sided book plus sanity, not exchange-timestamp age.
+
 ### Silent 0DTE entry skips — parity guard + timeout cascade (2026-06-05) [FIXED — implemented, commit pending]
 - **Problem**: Iron Fly V1 missed 3 of 4 entries the week of Jun 1 (only Tue logged). User spotted the gaps in the V1 dashboard. The bot was NOT down — V3/V4/ORB traded every day; cron ran it 14:30–21:15.
 - **Root cause**: (1) The put-call parity guard in `validate_credit_sanity` (`strategy.py:642`, `PARITY_TOLERANCE=$2.00`) rejected V1 on Mon/Wed/Thu with drift $2.06/$2.18/$2.15 — marginally over — and there is **NO retry**: `main.py:206-208` just `continue`s, so one stale REST mark abandons the day's entry. V1 is **first in `STRATEGY_CONFIGS`** (`main.py:54`), so it executes right at the 15:00 open spike and systematically catches the stalest marks; V2 (~15s later) passes the same check. 21 lifetime parity rejections across all 0DTE strats (V4×7, V1×6, V2×4, V3×2, Dynamic×2); V1 took 3 of its 6 this one week (SPX≈7600 makes a flat $2 tolerance relatively tighter). (2) Thu Jun 4 also had a `ReadTimeout` in V2's execution that propagated to the single call-site `try/except` (`main.py:316-318` "Trade cycle failed"), aborting the rest of the cycle → **Dynamic never executed**. One strategy's failure cascades to all later strategies (the `return`-vs-`continue` pitfall). (3) Skips are silent — `logger.warning` in `trade.log` only, no alert.

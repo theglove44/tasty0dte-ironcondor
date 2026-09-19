@@ -140,7 +140,7 @@ main() → Session(provider_secret=..., refresh_token=...)
 - Streams DXLink Quote events for all open leg symbols
 - Calculates debit-to-close and P/L
 - Closes on: profit target, stop loss, time exit, or ORB60 force-close signal
-- Multi-day strategies (Jade Lizard): require 4h minimum hold + fresh quotes before closing
+- Multi-day strategies (Jade Lizard): require 4h minimum hold + two-sided quotes (bid and ask on all 4 legs) before closing
 
 ### EOD expiration (monitor.py:check_eod_expiration)
 - Triggers when UK time ≥ 21:00
@@ -270,7 +270,7 @@ Prevents phantom profit-target hits from dropped/reconnected streams.
 
 ### Multi-day close guards (Jade Lizard)
 1. Minimum hold: 4 hours after entry before any profit-target close
-2. Quote freshness: all 4 leg quotes must have `bid_time` within 60s
+2. Two-sided quotes: all 4 legs must have bid > 0 and ask > 0. Timestamp age is ignored — far-OTM SPXW often does not reprint within 60s, and that clock previously blocked the 25% take until expiry booked full credit.
 3. Target expiry: EOD settlement only fires on the day `target_expiry` in Notes matches `today`
 
 ---
@@ -324,7 +324,7 @@ Test files in `tests/`:
 - `test_credit_sanity.py` — both validation guards, edge cases
 - `test_monitor.py` — P/L calculation, time exits, EOD expiration
 - `test_jade_lizard.py` — expected-move formula, strike grid, credit floor
-- `test_monitor_jade_lizard.py` — multi-day hold, quote freshness, target expiry
+- `test_monitor_jade_lizard.py` — multi-day hold, two-sided quotes, target expiry
 - `test_entry_reliability.py` — retry logic, chain fetch retries, per-strategy isolation
 - `test_logger.py` — IV Rank normalisation, CSV migration
 - `test_project_paths.py` — path resolution

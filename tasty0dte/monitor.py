@@ -140,19 +140,31 @@ def _multi_day_hold_elapsed(row) -> bool:
         return True  # if we can't parse, allow close
 
 
-def _quotes_fresh(quotes, symbols: list[str], max_age_s: float = 60.0) -> bool:
-    """Return True if all symbols have quotes whose bid_time is within max_age_s seconds."""
-    now_ms = datetime.utcnow().timestamp() * 1000
+def _positive_quote_px(value) -> bool:
+    """True if value is a usable option price (strictly greater than zero)."""
+    if value is None:
+        return False
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _quotes_two_sided(quotes, symbols: list[str]) -> bool:
+    """Return True if every symbol has both a bid and an ask above zero.
+
+    Far-OTM multi-day legs often keep a valid two-sided book whose exchange
+    timestamp is older than a minute. A 60s bid_time check then blocked the
+    25% profit take and the trade rode to expiry. Timestamp age is ignored;
+    a missing or one-sided book still blocks the close.
+    """
     for sym in symbols:
         q = quotes.get(sym)
         if q is None:
             return False
-        bid_time = getattr(q, "bid_time", None)
-        if not bid_time:
-            continue  # absent or zero (no exchange timestamp) — can't check, allow
-        # bid_time from DXLink is milliseconds since epoch
-        age_s = (now_ms - float(bid_time)) / 1000
-        if age_s > max_age_s:
+        if not _positive_quote_px(getattr(q, "bid_price", None)):
+            return False
+        if not _positive_quote_px(getattr(q, "ask_price", None)):
             return False
     return True
 
@@ -552,15 +564,16 @@ async def check_open_positions(session: Session, csv_path: str | None = None, re
                         f"   >>> PROFIT TARGET (holding — min hold {MULTI_DAY_MIN_HOLD_HOURS:.0f}h not elapsed)"
                     )
                     logger.debug(f"Trade {index}: profit target met but min hold not elapsed, skipping.")
-                # Multi-day guard 2: require recent quotes for all legs before closing.
-                # _quotes_fresh uses its default 60-second window. The debit sanity check
-                # above separately rejects corrupt quote combinations.
-                elif _is_multi_day(strategy_name) and not _quotes_fresh(
+                # Multi-day guard 2: require a two-sided book on every leg.
+                # Timestamp age is ignored (far-OTM SPXW often does not reprint
+                # within 60s). The debit sanity check above still rejects
+                # corrupt quote combinations.
+                elif _is_multi_day(strategy_name) and not _quotes_two_sided(
                     quotes,
                     [row['Short Call'], row['Long Call'], row['Short Put'], row['Long Put']],
                 ):
-                    status_lines.append(f"   >>> PROFIT TARGET (holding — stale quotes, skipping close)")
-                    logger.warning(f"Trade {index}: profit target met but quotes are stale, skipping close.")
+                    status_lines.append(f"   >>> PROFIT TARGET (holding — one-sided quotes, skipping close)")
+                    logger.warning(f"Trade {index}: profit target met but quotes are one-sided, skipping close.")
                 elif read_only:
                     status_lines.append(f"   >>> PROFIT TARGET REACHED (Read-Only)")
                 else:

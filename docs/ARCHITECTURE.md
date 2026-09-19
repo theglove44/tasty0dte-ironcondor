@@ -90,9 +90,9 @@ The paper ledger is not an append-only event store: the monitor reads it into pa
 
 ### Position monitor: `tasty0dte/monitor.py`
 
-`check_open_positions()` reads open rows, subscribes to DXLink `Quote` events for the leg symbols, calculates a debit-to-close and P/L, and applies profit-target, stop-loss, and time-exit rules. It has quote-sanity and multi-day freshness/hold guards to avoid closing on impossible or stale prices.
+`check_open_positions()` reads open rows, subscribes to DXLink `Quote` events for the leg symbols, calculates a debit-to-close and P/L, and applies profit-target, stop-loss, and time-exit rules. It has quote-sanity and multi-day hold / two-sided-quote guards to avoid closing on impossible or one-sided prices.
 
-`check_eod_expiration()` runs after the UK close threshold, calculates intrinsic settlement for each leg, writes `EXPIRED` and `Exit P/L`, and records the settlement price in `Notes`. Jade Lizard rows skip same-day settlement and are settled only when the `target_expiry` in their notes matches the current date; their profit-target path can close them earlier after the multi-day hold and quote-freshness guards pass.
+`check_eod_expiration()` runs after the UK close threshold, calculates intrinsic settlement for each leg, writes `EXPIRED` and `Exit P/L`, and records the settlement price in `Notes`. Jade Lizard rows skip same-day settlement and are settled only when the `target_expiry` in their notes matches the current date; their profit-target path can close them earlier after the multi-day hold and two-sided-quote guards pass.
 
 ### Dashboard: `dashboard/app.py`, `dashboard/data.py`, and templates
 
